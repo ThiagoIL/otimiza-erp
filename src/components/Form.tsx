@@ -1,5 +1,5 @@
 "use client";
-import { createContext, Fragment, useActionState, useContext, useEffect, useRef, type ReactNode } from "react";
+import { createContext, Fragment, useActionState, useContext, useEffect, useId, useRef, type ReactNode } from "react";
 import { useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import type { Action, ActionState } from "@/lib/action";
@@ -49,7 +49,8 @@ export function Field(props: {
   const err = st.fields?.[name];
   const isPw = type === "password";
   const dv = isPw ? undefined : (st.values?.[name] ?? (props.defaultValue == null ? "" : String(props.defaultValue)));
-  const id = `f_${name}`;
+  // único na página: a mesma tela pode ter vários formulários com campos de mesmo nome
+  const id = `f_${name}${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
   const desc = err ? `${id}_err` : hint ? `${id}_hint` : undefined;
   return (
     <div className={`fld${full ? " full" : ""}`}>
@@ -70,11 +71,14 @@ export function Field(props: {
   );
 }
 
-export function Check({ name, label, defaultChecked }: { name: string; label: string; defaultChecked?: boolean }) {
+export function Check({ name, label, defaultChecked, inline }: { name: string; label: string; defaultChecked?: boolean; inline?: boolean }) {
   const st = useContext(Ctx);
   const v = st.values ? st.values[name] : undefined;
   const checked = st.values ? v === "on" : defaultChecked;
-  return <div className="fld full"><label className="chk"><input type="checkbox" name={name} defaultChecked={checked} /> {label}</label></div>;
+  const err = st.fields?.[name];
+  const box = <label className="chk"><input type="checkbox" name={name} defaultChecked={checked} aria-invalid={!!err} /> {label}</label>;
+  if (inline) return box;
+  return <div className="fld full">{box}{err && <small className="err">{err}</small>}</div>;
 }
 
 export function Submit({ children, variant = "primary", pending = "Salvando…", block, confirm }: {
@@ -92,4 +96,15 @@ export function Submit({ children, variant = "primary", pending = "Salvando…",
 
 export function Hidden({ name, value }: { name: string; value: string }) {
   return <input type="hidden" name={name} value={value} />;
+}
+
+/** Estado da última resposta da ação (para componentes que montam campos próprios). */
+export function useFormResult(): ActionState {
+  return useContext(Ctx);
+}
+
+/** Mensagem de erro de um campo montado à parte (ex.: grupo de caixas de marcar). */
+export function FieldError({ name }: { name: string }) {
+  const err = useContext(Ctx).fields?.[name];
+  return err ? <small className="err">{err}</small> : null;
 }

@@ -15,6 +15,20 @@
       "when": 1791455138198,
       "tag": "0001_regras_de_seguranca",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1791485708928,
+      "tag": "0002_modulos_operacionais",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791485717436,
+      "tag": "0003_isolamento_modulos",
+      "breakpoints": true
     }
   ]
 }

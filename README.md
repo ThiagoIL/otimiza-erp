@@ -4,9 +4,10 @@ ERP multiempresa (multitenant) para a indústria. Cada empresa cliente acessa pe
 (`suaempresa.seudominio.com.br`) com os dados isolados das demais. O administrador do sistema cria e
 gerencia as empresas pelo painel web em `admin.seudominio.com.br`.
 
-Esta é a base da versão de produção: autenticação, empresas, usuários, níveis de acesso, auditoria e o
-primeiro módulo migrado do protótipo (cadastro de itens e grupos). Os demais módulos do protótipo
-(produção, compras, vendas, financeiro, NF-e) entram sobre esta mesma estrutura.
+Versão de produção com autenticação, empresas, usuários, níveis de acesso e auditoria, e os módulos
+operacionais: comercial, produção, montagens, estoque e contas a receber, além de página inicial com
+alertas por módulo, dashboards e o fluxo do sistema. Compras, fiscal (NF-e) e o restante do financeiro
+estão em escopo, descritos dentro do próprio sistema.
 
 ---
 
@@ -47,7 +48,7 @@ O sistema descobre **quem está acessando pelo domínio**:
 | Endereço | O que abre |
 |---|---|
 | `admin.seudominio.com.br` | Painel do administrador do sistema (empresas, administradores, auditoria) |
-| `empresa.seudominio.com.br` | Sistema da empresa cliente (início, itens, usuários, minha conta) |
+| `empresa.seudominio.com.br` | Sistema da empresa cliente (início, módulos, usuários, minha conta) |
 | `seudominio.com.br` e `www` | Página de apresentação, pedindo para acessar pelo endereço da empresa |
 | Qualquer outro domínio ou IP | Recusado (`404 Domínio não configurado`) |
 
@@ -60,6 +61,35 @@ O sistema descobre **quem está acessando pelo domínio**:
 3. **Row Level Security no PostgreSQL.** As tabelas de negócio só devolvem e só aceitam linhas da
    empresa informada na transação (`withTenant` em `src/lib/db.ts`). Se algum código esquecer o filtro,
    o banco devolve zero linhas em vez de dados de outra empresa.
+
+---
+
+## Módulos da empresa
+
+O menu lateral mostra só os módulos. As telas de cada módulo, inclusive as de configuração, ficam nas
+abas no topo quando se entra no módulo.
+
+| Módulo | Telas (abas) | O que faz |
+|---|---|---|
+| **Início** | | Indicadores principais e alertas separados por módulo (estoque, produção, montagens, comercial, financeiro), com filtro; fluxo do sistema |
+| **Dashboards** | Estoque, Produção, Montagens, Comercial, Financeiro | Escolha do painel a acompanhar |
+| **Fluxo do sistema** | | Como o pedido passa pelos módulos; cada etapa abre a tela correspondente |
+| **Comercial** | Pedidos de venda · Clientes e fornecedores | Pedido com cliente, itens, preço, desconto por item e geral, frete, datas, forma de pagamento e parcelas; relatório do pedido para imprimir/PDF; gera as ordens de produção, a montagem e a expedição. Cadastro único de cliente/fornecedor/transportadora (marca um ou mais tipos) |
+| **Produção** | Ordens de produção · Etapas e situações · Centros e equipe | Ordens em kanban (arrastar entre etapas) ou lista; nova ordem já preenchida a partir do pedido; materiais previstos, retirada do estoque para a ordem e apontamento com entrada do produto |
+| **Montagens** | Obras e montagens · Equipe | Acompanha um cliente ou obra: ambientes (ou andar → apartamento) com montador e auxiliar, e as peças a montar com progresso |
+| **Estoque** | Posição de estoque · Movimentações · Itens e grupos · Locais de estoque | Saldo por item e local, entradas e saídas (com a ordem de produção de destino), histórico de movimentações |
+| **Financeiro** | Contas a receber · Próximas etapas | Parcelas geradas pelos pedidos aprovados, baixa de recebimento |
+| **Compras**, **Fiscal (NF-e)** | | Em escopo: a tela descreve o que o módulo vai fazer e a ordem de implantação |
+
+**Regras importantes:**
+
+- O saldo de estoque é atualizado na mesma transação da movimentação, com a linha travada: duas saídas
+  ao mesmo tempo nunca deixam o estoque negativo (o banco também recusa saldo negativo).
+- Orçamento não gera contas a receber. As parcelas são lançadas quando o pedido é aprovado (ou vai para
+  produção) e as que ainda não foram recebidas somem se ele voltar a orçamento ou for cancelado.
+- Numeração própria por empresa: `PV 00001` (pedido), `OP 00001` (ordem de produção), `MT 0001` (montagem).
+- Empresa nova recebe sozinha, no primeiro acesso, um local de estoque padrão e etapas e situações de
+  produção iniciais, que podem ser alteradas.
 
 ---
 
@@ -376,15 +406,19 @@ NEW_PASSWORD='NovaSenhaForte2026' node scripts/reset-master-password.mjs
 drizzle/                     migrations SQL (aplicadas em ordem)
   0000_inicial.sql           tabelas
   0001_regras_de_seguranca.sql  conta master, último administrador, isolamento por empresa (RLS)
+  0002_modulos_operacionais.sql tabelas de estoque, produção, montagens, comercial e contas a receber
+  0003_isolamento_modulos.sql   isolamento por empresa (RLS) e regras das tabelas novas
 scripts/
   migrate.mjs                aplica as migrations
   bootstrap.mjs              cria a conta master
   reset-master-password.mjs  recuperação da senha da master pelo servidor
-  seed-demo.mjs              empresa de demonstração
+  seed-demo.mjs              empresa de demonstração com dados de todos os módulos
 src/
   app/                       rotas (Next.js App Router)
     (entrada)/login          tela de login (sistema ou empresa, conforme o domínio)
     (sistema)/               telas logadas; o menu muda conforme o domínio
+      estoque/ producao/ montagens/ comercial/ financeiro/   módulos (layout com as abas do módulo)
+    (impressao)/             relatório do pedido, sem menu, para imprimir ou salvar em PDF
     api/health               verificação de saúde
   components/                formulários, menu, logo, tabelas
   db/schema.ts               modelo de dados
@@ -392,9 +426,14 @@ src/
     context.ts               área, empresa e sessão da requisição
     session.ts               sessões e cookies
     rules.ts                 regras de permissão (testadas)
+    modules.ts               módulos do menu e abas de cada módulo
+    sales.ts                 cálculos do pedido e parcelas, validação de CNPJ/CPF (testados)
+    sql.ts                   col(): coluna com o nome da tabela em subconsultas
     db.ts                    conexão e withTenant (isolamento por empresa)
     password.ts              senhas
   server/                    ações dos formulários (Server Actions)
+    stock.ts                 movimentação de estoque, numeração e cadastros iniciais da empresa
+    receivables.ts           parcelas a receber conforme a situação do pedido
   views/                     telas do painel do sistema e da empresa
 tests/                       testes automatizados
 Dockerfile                   imagem de produção

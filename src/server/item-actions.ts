@@ -53,7 +53,7 @@ export async function saveItemAction(_: ActionState, fd: FormData): Promise<Acti
     return msg.includes("código") ? { fields: { codigo: msg }, error: "Confira os campos destacados.", values: keepValues(raw) } : { error: msg, values: keepValues(raw) };
   }
   await audit({ action: d.id ? "item.alterado" : "item.criado", tenantId: s.tenant.id, userId: s.user.id, userEmail: s.user.email, entity: "item", entityId: id, data: { codigo: d.codigo } });
-  return { ok: true, redirectTo: `/itens?salvo=${encodeURIComponent(d.codigo)}` };
+  return { ok: true, redirectTo: `/estoque/itens?salvo=${encodeURIComponent(d.codigo)}` };
 }
 
 export async function deleteItemAction(_: ActionState, fd: FormData): Promise<ActionState> {
@@ -68,7 +68,7 @@ export async function deleteItemAction(_: ActionState, fd: FormData): Promise<Ac
   } catch (err) {
     return { error: friendlyDbError(err, "Não foi possível excluir o item.") };
   }
-  return { ok: true, redirectTo: "/itens?excluido=1" };
+  return { ok: true, redirectTo: "/estoque/itens?excluido=1" };
 }
 
 const groupSchema = z.object({ nome: z.string().trim().min(2, "Informe o nome do grupo.").max(60) });

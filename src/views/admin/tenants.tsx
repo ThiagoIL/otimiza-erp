@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { tenants, users } from "@/db/schema";
 import { requireAdmin } from "@/lib/context";
 import { fmtDate, tenantUrl } from "@/lib/format";
+import { col } from "@/lib/sql";
 
 export async function AdminTenants({ searchParams }: { searchParams: Promise<{ q?: string; situacao?: string }> }) {
   await requireAdmin();
@@ -12,7 +13,7 @@ export async function AdminTenants({ searchParams }: { searchParams: Promise<{ q
   const conds: SQL[] = [];
   if (q) conds.push(or(ilike(tenants.name, `%${q}%`), ilike(tenants.slug, `%${q}%`), ilike(tenants.document, `%${q}%`))!);
   if (sp.situacao === "ACTIVE" || sp.situacao === "SUSPENDED") conds.push(eq(tenants.status, sp.situacao));
-  const rows = await db.select({ t: tenants, n: sql<number>`(select count(*)::int from ${users} where ${users.tenantId} = ${tenants.id})` })
+  const rows = await db.select({ t: tenants, n: sql<number>`(select count(*)::int from ${users} where ${col(users.tenantId)} = ${col(tenants.id)})` })
     .from(tenants).where(conds.length ? and(...conds) : undefined).orderBy(asc(tenants.name)).limit(500);
   return (
     <>

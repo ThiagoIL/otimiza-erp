@@ -18,7 +18,7 @@ export function ItemForm({ item, groups }: { item?: Item; groups: { id: string; 
       <Field name="custo" label="Custo padrão (R$)" defaultValue={toInput(item?.cost)} placeholder="0,00" />
       <Field name="preco_venda" label="Preço de venda (R$)" defaultValue={toInput(item?.salePrice)} placeholder="0,00" />
       <Check name="ativo" label="Item ativo" defaultChecked={item ? item.active : true} />
-      <div className="full form-foot"><Link className="btn" href="/itens">Cancelar</Link><Submit>{item ? "Salvar alterações" : "Cadastrar item"}</Submit></div>
+      <div className="full form-foot"><Link className="btn" href="/estoque/itens">Cancelar</Link><Submit>{item ? "Salvar alterações" : "Cadastrar item"}</Submit></div>
     </Form>
   );
 }

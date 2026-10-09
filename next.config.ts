@@ -32,6 +32,10 @@ const config: NextConfig = {
   reactStrictMode: true,
   serverExternalPackages: ["pg"],
   experimental: { serverActions: { bodySizeLimit: "1mb" } },
+  async redirects() {
+    // endereços antigos do cadastro de itens, de antes do módulo de estoque
+    return [{ source: "/itens/:path*", destination: "/estoque/itens/:path*", permanent: true }];
+  },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

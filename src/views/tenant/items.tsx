@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { and, asc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { withTenant } from "@/lib/db";
-import { itemGroups, items } from "@/db/schema";
+import { itemGroups, items, stockBalances } from "@/db/schema";
 import { requireTenantUser } from "@/lib/context";
 import { fmtMoney, fmtQty, itemTypeLabel, ITEM_TYPES } from "@/lib/format";
 import { Field, Form, Hidden, Submit } from "@/components/Form";
 import { createGroupAction, deleteGroupAction } from "@/server/item-actions";
+import { col } from "@/lib/sql";
 
 const PAGE = 50;
 type ItemType = (typeof ITEM_TYPES)[number][0];
@@ -21,10 +22,10 @@ export async function TenantItems({ searchParams }: { searchParams: Promise<{ q?
   if (sp.grupo) conds.push(eq(items.groupId, sp.grupo.slice(0, 64)));
   const where = and(...conds);
   const [rows, [{ total }], groups] = await withTenant(s.tenant.id, async (tx) => [
-    await tx.select({ i: items, g: itemGroups.name }).from(items).leftJoin(itemGroups, eq(itemGroups.id, items.groupId))
+    await tx.select({ i: items, g: itemGroups.name, bal: sql<string>`coalesce((select sum(${col(stockBalances.quantity)}) from ${stockBalances} where ${col(stockBalances.itemId)} = ${col(items.id)}), 0)` }).from(items).leftJoin(itemGroups, eq(itemGroups.id, items.groupId))
       .where(where).orderBy(asc(items.name)).limit(PAGE).offset((page - 1) * PAGE),
     await tx.select({ total: sql<number>`count(*)::int` }).from(items).where(where),
-    await tx.select({ id: itemGroups.id, name: itemGroups.name, n: sql<number>`(select count(*)::int from ${items} where ${items.groupId} = ${itemGroups.id})` }).from(itemGroups).orderBy(asc(itemGroups.name)),
+    await tx.select({ id: itemGroups.id, name: itemGroups.name, n: sql<number>`(select count(*)::int from ${items} where ${col(items.groupId)} = ${col(itemGroups.id)})` }).from(itemGroups).orderBy(asc(itemGroups.name)),
   ] as const);
   const pages = Math.max(1, Math.ceil(total / PAGE));
   const qs = (p: number) => `?${new URLSearchParams({ ...(q && { q }), ...(sp.tipo && { tipo: sp.tipo }), ...(sp.grupo && { grupo: sp.grupo }), p: String(p) })}`;
@@ -32,8 +33,8 @@ export async function TenantItems({ searchParams }: { searchParams: Promise<{ q?
   const filtered = !!(q || sp.tipo || sp.grupo);
   return (
     <>
-      <div className="ph"><div><h1>Itens</h1><p>Matérias-primas, componentes e produtos da fábrica.</p></div>
-        <div className="acts"><Link className="btn btn-primary" href="/itens/novo">Novo item</Link></div></div>
+      <div className="ph"><div><h1>Itens e grupos</h1><p>Matérias-primas, componentes e produtos da fábrica. Os grupos ficam no fim da página.</p></div>
+        <div className="acts"><Link className="btn btn-primary" href="/estoque/itens/novo">Novo item</Link></div></div>
       {sp.salvo && <div className="alert ok" role="status">Item {sp.salvo} salvo.</div>}
       {sp.excluido && <div className="alert ok" role="status">Item excluído.</div>}
       <form className="bar" role="search">
@@ -44,17 +45,17 @@ export async function TenantItems({ searchParams }: { searchParams: Promise<{ q?
       </form>
       <div className="tbl">
         {rows.length ? (
-          <table><thead><tr><th>Código</th><th>Descrição</th><th>Tipo</th><th>Grupo</th><th>Un.</th><th className="num">Est. mínimo</th><th className="num">Custo</th><th className="num">Preço</th><th>Situação</th></tr></thead>
-            <tbody>{rows.map(({ i, g }) => (
+          <table><thead><tr><th>Código</th><th>Descrição</th><th>Tipo</th><th>Grupo</th><th>Un.</th><th className="num">Saldo</th><th className="num">Est. mínimo</th><th className="num">Custo</th><th className="num">Preço</th><th>Situação</th></tr></thead>
+            <tbody>{rows.map(({ i, g, bal }) => (
               <tr key={i.id}>
-                <td>{i.code}</td><td><Link className="row-link" href={`/itens/${i.id}`}>{i.name}</Link></td><td>{itemTypeLabel(i.type)}</td><td>{g ?? "—"}</td><td>{i.unit}</td>
-                <td className="num">{fmtQty(i.minStock)}</td><td className="num">{fmtMoney(i.cost)}</td><td className="num">{fmtMoney(i.salePrice)}</td>
+                <td>{i.code}</td><td><Link className="row-link" href={`/estoque/itens/${i.id}`}>{i.name}</Link></td><td>{itemTypeLabel(i.type)}</td><td>{g ?? "—"}</td><td>{i.unit}</td>
+                <td className="num"><b>{fmtQty(bal)}</b></td><td className="num">{fmtQty(i.minStock)}</td><td className="num">{fmtMoney(i.cost)}</td><td className="num">{fmtMoney(i.salePrice)}</td>
                 <td>{i.active ? <span className="badge ok">Ativo</span> : <span className="badge">Inativo</span>}</td>
               </tr>))}</tbody></table>
         ) : <div className="empty"><strong>{filtered ? "Nenhum item neste filtro" : "Nenhum item cadastrado"}</strong>{filtered ? "Ajuste a busca ou os filtros." : "Cadastre o primeiro item."}</div>}
         {pages > 1 && <div className="pager">{page > 1 && <Link className="btn btn-sm" href={qs(page - 1)}>Anterior</Link>}<span>Página {page} de {pages}</span>{page < pages && <Link className="btn btn-sm" href={qs(page + 1)}>Próxima</Link>}</div>}
       </div>
-      <section className="panel" style={{ marginTop: 18, maxWidth: 640 }}><h2>Grupos de itens</h2><div className="pb stack">
+      <section className="panel" id="grupos" style={{ marginTop: 18, maxWidth: 640 }}><h2>Grupos de itens</h2><div className="pb stack">
         {groups.length ? <div className="tbl solo"><table><tbody>{groups.map((g) => (
           <tr key={g.id}><td>{g.name}</td><td className="num muted">{g.n} itens</td>
             <td className="num">{admin && <Form action={deleteGroupAction} className="inline-form"><Hidden name="id" value={g.id} /><Submit variant="danger" pending="…" confirm={`Excluir o grupo ${g.name}?`}>Excluir</Submit></Form>}</td></tr>))}
