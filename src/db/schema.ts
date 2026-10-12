@@ -12,7 +12,7 @@
  */
 import { sql } from "drizzle-orm";
 import {
-  boolean, index, integer, jsonb, numeric, pgEnum, pgTable, text, timestamp, uniqueIndex,
+  boolean, index, integer, jsonb, pgEnum, pgTable, text, timestamp, uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { createId } from "../lib/ids";
 
@@ -46,6 +46,8 @@ export const users = pgTable("users", {
   status: userStatusEnum("status").notNull().default("ACTIVE"),
   isMaster: boolean("is_master").notNull().default(false), // conta master protegida
   mustChangePassword: boolean("must_change_password").notNull().default(false),
+  /** perfil de acesso aos módulos (access_profiles); nulo = acesso a todos os módulos de negócio */
+  profileId: text("profile_id"),
   failedLogins: integer("failed_logins").notNull().default(0),
   lockedUntil: ts("locked_until"),
   lastLoginAt: ts("last_login_at"),
@@ -90,34 +92,8 @@ export const auditLogs = pgTable("audit_logs", {
   createdAt: ts("created_at").notNull().defaultNow(),
 }, (t) => [index("audit_tenant_created_idx").on(t.tenantId, t.createdAt), index("audit_created_idx").on(t.createdAt)]);
 
-// ---------- Estoque: primeiro módulo migrado do protótipo ----------
-
-export const itemGroups = pgTable("item_groups", {
-  id: id(),
-  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
-  createdAt: ts("created_at").notNull().defaultNow(),
-  updatedAt: ts("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
-}, (t) => [uniqueIndex("item_groups_tenant_name_uq").on(t.tenantId, t.name)]);
-
-export const items = pgTable("items", {
-  id: id(),
-  tenantId: text("tenant_id").notNull().references(() => tenants.id, { onDelete: "cascade" }),
-  code: text("code").notNull(),
-  name: text("name").notNull(),
-  unit: text("unit").notNull().default("UN"),
-  type: itemTypeEnum("type").notNull().default("MATERIA_PRIMA"),
-  groupId: text("group_id").references(() => itemGroups.id, { onDelete: "set null" }),
-  minStock: numeric("min_stock", { precision: 14, scale: 4 }).notNull().default("0"),
-  cost: numeric("cost", { precision: 14, scale: 4 }).notNull().default("0"),
-  salePrice: numeric("sale_price", { precision: 14, scale: 2 }).notNull().default("0"),
-  ncm: text("ncm"),
-  active: boolean("active").notNull().default(true),
-  createdAt: ts("created_at").notNull().defaultNow(),
-  updatedAt: ts("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
-}, (t) => [uniqueIndex("items_tenant_code_uq").on(t.tenantId, t.code), index("items_tenant_name_idx").on(t.tenantId, t.name)]);
+// Tabelas de negócio (itens, comercial, produção, estoque, compras, financeiro): src/db/erp.ts
 
 export type Tenant = typeof tenants.$inferSelect;
 export type User = typeof users.$inferSelect;
-export type Item = typeof items.$inferSelect;
 export type Role = (typeof roleEnum.enumValues)[number];

@@ -7,7 +7,7 @@ type SP = Promise<Record<string, string | undefined>>;
 export default async function Inicio({ searchParams }: { searchParams: SP }) {
   const info = await requestArea();
   if (info.area === "admin") return <AdminHome />;
-  if (info.area === "tenant") return <TenantHome searchParams={await searchParams} />;
+  if (info.area === "tenant") return <TenantHome />;
   return (
     <main className="login">
       <BrandPanel />

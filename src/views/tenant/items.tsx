@@ -1,69 +1,93 @@
-import Link from "next/link";
-import { and, asc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
-import { withTenant } from "@/lib/db";
-import { itemGroups, items } from "@/db/schema";
-import { requireTenantUser } from "@/lib/context";
-import { fmtMoney, fmtQty, itemTypeLabel, ITEM_TYPES } from "@/lib/format";
-import { Field, Form, Hidden, Submit } from "@/components/Form";
-import { createGroupAction, deleteGroupAction } from "@/server/item-actions";
+import { and, asc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { page } from "@/lib/access";
+import * as E from "@/db/erp";
+import { fmtMoney, fmtQty } from "@/lib/format";
+import { avgCosts, balances, balanceOf } from "@/server/common";
+import { Active, BtnLink, Empty, PageHead, Pager, pageLink } from "@/components/ui";
+import { ClickRow, FilterBar } from "@/components/client";
+import { Icon } from "@/components/Icon";
 
-const PAGE = 50;
-type ItemType = (typeof ITEM_TYPES)[number][0];
+const PAGE = 60;
+type SP = Record<string, string | undefined>;
 
-export async function TenantItems({ searchParams }: { searchParams: Promise<{ q?: string; tipo?: string; grupo?: string; p?: string; salvo?: string; excluido?: string }> }) {
-  const s = await requireTenantUser();
+export async function TenantItems({ searchParams }: { searchParams: Promise<SP> }) {
+  const s = await page("itens");
   const sp = await searchParams;
   const q = (sp.q ?? "").trim().slice(0, 80);
-  const page = Math.max(1, Math.min(1000, Number(sp.p) || 1));
-  const conds: SQL[] = [eq(items.tenantId, s.tenant.id)];
-  if (q) conds.push(or(ilike(items.code, `%${q}%`), ilike(items.name, `%${q}%`))!);
-  if (ITEM_TYPES.some(([k]) => k === sp.tipo)) conds.push(eq(items.type, sp.tipo as ItemType));
-  if (sp.grupo) conds.push(eq(items.groupId, sp.grupo.slice(0, 64)));
+  const pg = Math.max(1, Math.min(1000, Number(sp.p) || 1));
+  const conds: SQL[] = [eq(E.items.tenantId, s.tenant.id)];
+  if (q) conds.push(or(ilike(E.items.code, `%${q}%`), ilike(E.items.name, `%${q}%`), ilike(E.items.complement, `%${q}%`))!);
+  if (sp.grupo) conds.push(eq(E.items.groupId, sp.grupo));
+  if (sp.tipo) conds.push(eq(E.items.typeId, sp.tipo));
+  if (sp.un) conds.push(eq(E.items.unit, sp.un));
+  if (sp.forn) conds.push(eq(E.items.defaultSupplierId, sp.forn));
+  if (sp.local) conds.push(eq(E.items.defaultLocationId, sp.local));
+  if (sp.sit === "inativos") conds.push(eq(E.items.active, false)); else if (sp.sit !== "todos") conds.push(eq(E.items.active, true));
+  if (sp.ncm === "sem") conds.push(or(isNull(E.items.ncm), eq(E.items.ncm, ""))!);
+  if (sp.estr === "sem") conds.push(sql`"items"."type" in ('PRODUTO_ACABADO','SEMIACABADO') and not exists (select 1 from item_bom b where b.item_id = "items"."id")`);
+  if (sp.estr === "com") conds.push(sql`exists (select 1 from item_bom b where b.item_id = "items"."id")`);
+  if (sp.cod) conds.push(ilike(E.items.code, `${sp.cod.trim()}%`));
   const where = and(...conds);
-  const [rows, [{ total }], groups] = await withTenant(s.tenant.id, async (tx) => [
-    await tx.select({ i: items, g: itemGroups.name }).from(items).leftJoin(itemGroups, eq(itemGroups.id, items.groupId))
-      .where(where).orderBy(asc(items.name)).limit(PAGE).offset((page - 1) * PAGE),
-    await tx.select({ total: sql<number>`count(*)::int` }).from(items).where(where),
-    await tx.select({ id: itemGroups.id, name: itemGroups.name, n: sql<number>`(select count(*)::int from ${items} where ${items.groupId} = ${itemGroups.id})` }).from(itemGroups).orderBy(asc(itemGroups.name)),
-  ] as const);
-  const pages = Math.max(1, Math.ceil(total / PAGE));
-  const qs = (p: number) => `?${new URLSearchParams({ ...(q && { q }), ...(sp.tipo && { tipo: sp.tipo }), ...(sp.grupo && { grupo: sp.grupo }), p: String(p) })}`;
-  const admin = s.user.role === "TENANT_ADMIN";
-  const filtered = !!(q || sp.tipo || sp.grupo);
+
+  const data = await s.tx(async (tx) => {
+    const rows = await tx.select({ i: E.items, g: E.itemGroups.name, t: E.itemTypes.name, nb: sql<number>`(select count(*)::int from item_bom b where b.item_id = "items"."id")` })
+      .from(E.items).leftJoin(E.itemGroups, eq(E.itemGroups.id, E.items.groupId)).leftJoin(E.itemTypes, eq(E.itemTypes.id, E.items.typeId))
+      .where(where).orderBy(asc(E.items.name)).limit(PAGE).offset((pg - 1) * PAGE);
+    const [{ total }] = await tx.select({ total: sql<number>`count(*)::int` }).from(E.items).where(where);
+    const ids = rows.map((r) => r.i.id);
+    const [bal, cost] = await Promise.all([balances(tx, { itemIds: ids }), avgCosts(tx, ids)]);
+    const groups = await tx.select({ id: E.itemGroups.id, n: E.itemGroups.name }).from(E.itemGroups).orderBy(asc(E.itemGroups.name));
+    const types = await tx.select({ id: E.itemTypes.id, n: E.itemTypes.name }).from(E.itemTypes).orderBy(asc(E.itemTypes.name));
+    const units = await tx.select({ c: E.units.code }).from(E.units).orderBy(asc(E.units.code));
+    const sups = await tx.select({ id: E.partners.id, n: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})` }).from(E.partners).where(sql`'Fornecedor' = any(${E.partners.kinds})`).orderBy(asc(E.partners.name));
+    const locs = await tx.select({ id: E.stockLocations.id, n: E.stockLocations.name }).from(E.stockLocations).orderBy(asc(E.stockLocations.code));
+    return { rows, total, bal, cost, groups, types, units, sups, locs };
+  });
+  const pages = Math.max(1, Math.ceil(data.total / PAGE));
+  const moreActive = ["un", "forn", "local", "ncm", "estr", "cod"].filter((k) => sp[k]).length;
+  const filtered = !!(q || sp.grupo || sp.tipo || moreActive);
+
   return (
     <>
-      <div className="ph"><div><h1>Itens</h1><p>Matérias-primas, componentes e produtos da fábrica.</p></div>
-        <div className="acts"><Link className="btn btn-primary" href="/itens/novo">Novo item</Link></div></div>
-      {sp.salvo && <div className="alert ok" role="status">Item {sp.salvo} salvo.</div>}
-      {sp.excluido && <div className="alert ok" role="status">Item excluído.</div>}
-      <form className="bar" role="search">
-        <input type="search" name="q" defaultValue={q} placeholder="Código ou descrição" aria-label="Buscar item" />
-        <select name="tipo" defaultValue={sp.tipo ?? ""} aria-label="Tipo" style={{ maxWidth: 200 }}><option value="">Todos os tipos</option>{ITEM_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
-        <select name="grupo" defaultValue={sp.grupo ?? ""} aria-label="Grupo" style={{ maxWidth: 200 }}><option value="">Todos os grupos</option>{groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
-        <button className="btn" type="submit">Filtrar</button><span className="grow" /><span className="muted">{total} itens</span>
-      </form>
+      <PageHead title="Itens" sub="Matérias-primas, componentes, produtos acabados e materiais de consumo."
+        actions={s.edit && <BtnLink href="/itens/novo" primary icon="plus">Novo item</BtnLink>} />
+      <FilterBar moreActive={moreActive} right={<span className="count">{data.total} itens</span>}
+        more={<>
+          <label className="fl">Código começa com <input type="text" name="cod" defaultValue={sp.cod ?? ""} style={{ width: 130 }} /></label>
+          <select name="un" defaultValue={sp.un ?? ""} aria-label="Unidade"><option value="">Todas as unidades</option>{data.units.map((u) => <option key={u.c}>{u.c}</option>)}</select>
+          <select name="forn" defaultValue={sp.forn ?? ""} aria-label="Fornecedor"><option value="">Qualquer fornecedor</option>{data.sups.map((f) => <option key={f.id} value={f.id}>{f.n}</option>)}</select>
+          <select name="local" defaultValue={sp.local ?? ""} aria-label="Local padrão"><option value="">Qualquer local padrão</option>{data.locs.map((l) => <option key={l.id} value={l.id}>{l.n}</option>)}</select>
+          <select name="estr" defaultValue={sp.estr ?? ""} aria-label="Estrutura"><option value="">Estrutura: todos</option><option value="com">Com estrutura</option><option value="sem">Fabricados sem estrutura</option></select>
+          <select name="ncm" defaultValue={sp.ncm ?? ""} aria-label="NCM"><option value="">NCM: todos</option><option value="sem">Sem NCM</option></select>
+        </>}>
+        <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={q} placeholder="Código, descrição ou complemento" aria-label="Buscar item" /></div>
+        <select name="grupo" defaultValue={sp.grupo ?? ""} aria-label="Grupo"><option value="">Todos os grupos</option>{data.groups.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</select>
+        <select name="tipo" defaultValue={sp.tipo ?? ""} aria-label="Tipo"><option value="">Todos os tipos</option>{data.types.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</select>
+        <select name="sit" defaultValue={sp.sit ?? ""} aria-label="Situação"><option value="">Ativos</option><option value="inativos">Inativos</option><option value="todos">Ativos e inativos</option></select>
+      </FilterBar>
       <div className="tbl">
-        {rows.length ? (
-          <table><thead><tr><th>Código</th><th>Descrição</th><th>Tipo</th><th>Grupo</th><th>Un.</th><th className="num">Est. mínimo</th><th className="num">Custo</th><th className="num">Preço</th><th>Situação</th></tr></thead>
-            <tbody>{rows.map(({ i, g }) => (
-              <tr key={i.id}>
-                <td>{i.code}</td><td><Link className="row-link" href={`/itens/${i.id}`}>{i.name}</Link></td><td>{itemTypeLabel(i.type)}</td><td>{g ?? "—"}</td><td>{i.unit}</td>
-                <td className="num">{fmtQty(i.minStock)}</td><td className="num">{fmtMoney(i.cost)}</td><td className="num">{fmtMoney(i.salePrice)}</td>
-                <td>{i.active ? <span className="badge ok">Ativo</span> : <span className="badge">Inativo</span>}</td>
-              </tr>))}</tbody></table>
-        ) : <div className="empty"><strong>{filtered ? "Nenhum item neste filtro" : "Nenhum item cadastrado"}</strong>{filtered ? "Ajuste a busca ou os filtros." : "Cadastre o primeiro item."}</div>}
-        {pages > 1 && <div className="pager">{page > 1 && <Link className="btn btn-sm" href={qs(page - 1)}>Anterior</Link>}<span>Página {page} de {pages}</span>{page < pages && <Link className="btn btn-sm" href={qs(page + 1)}>Próxima</Link>}</div>}
+        {data.rows.length ? (
+          <table>
+            <thead><tr><th>Código</th><th>Descrição</th><th>Grupo</th><th>Tipo</th><th>Un.</th><th className="num">Est. mínimo</th><th className="num">Saldo</th><th className="num">Custo médio</th><th className="num">Preço de venda</th><th>Situação</th></tr></thead>
+            <tbody>{data.rows.map(({ i, g, t, nb }) => {
+              const bal = balanceOf(data.bal, i.id);
+              const below = Number(i.minStock) > 0 && bal < Number(i.minStock);
+              return (
+                <ClickRow key={i.id} href={`/itens/${i.id}`} className={below ? "flag" : ""} style={!i.active ? { opacity: 0.6 } : undefined}>
+                  <td className="code">{i.code}</td>
+                  <td className="desc">{i.name}{i.complement && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{i.complement}</div>}
+                    {(i.type === "PRODUTO_ACABADO" || i.type === "SEMIACABADO") && !nb && <div><span className="badge warn" style={{ marginTop: 3 }}>Sem estrutura</span></div>}</td>
+                  <td>{g ?? "—"}</td><td>{t ?? "—"}</td><td>{i.unit}</td>
+                  <td className="num">{fmtQty(i.minStock)}</td><td className="num"><b className={below ? "t-bad" : ""}>{fmtQty(bal)}</b></td>
+                  <td className="num">{fmtMoney(data.cost.get(i.id))}</td><td className="num">{fmtMoney(i.salePrice)}</td>
+                  <td><Active on={i.active} /></td>
+                </ClickRow>
+              );
+            })}</tbody>
+          </table>
+        ) : <Empty title={filtered ? "Nenhum item neste filtro" : "Nenhum item cadastrado"}>{filtered ? "Ajuste a busca ou os filtros." : "Cadastre o primeiro item."}</Empty>}
+        <Pager page={pg} pages={pages} qs={pageLink(sp)} />
       </div>
-      <section className="panel" style={{ marginTop: 18, maxWidth: 640 }}><h2>Grupos de itens</h2><div className="pb stack">
-        {groups.length ? <div className="tbl solo"><table><tbody>{groups.map((g) => (
-          <tr key={g.id}><td>{g.name}</td><td className="num muted">{g.n} itens</td>
-            <td className="num">{admin && <Form action={deleteGroupAction} className="inline-form"><Hidden name="id" value={g.id} /><Submit variant="danger" pending="…" confirm={`Excluir o grupo ${g.name}?`}>Excluir</Submit></Form>}</td></tr>))}
-        </tbody></table></div> : <p className="muted" style={{ margin: 0 }}>Nenhum grupo cadastrado.</p>}
-        <Form action={createGroupAction}>
-          <Field name="nome" label="Novo grupo" placeholder="Ex.: Chapas e perfis" required />
-          <div className="fld" style={{ alignSelf: "end" }}><Submit pending="Criando…">Adicionar grupo</Submit></div>
-        </Form>
-      </div></section>
     </>
   );
 }

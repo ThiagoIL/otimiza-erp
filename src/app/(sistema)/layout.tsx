@@ -1,8 +1,12 @@
+import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { Shell } from "@/components/Shell";
-import { NavLink } from "@/components/NavLink";
 import { adminSession, currentTenant, requestArea, tenantSession } from "@/lib/context";
+import { accessOf } from "@/lib/access";
+import { ADMIN_NAV, TENANT_NAV } from "@/lib/modules";
+import { ensureDefaults } from "@/server/common";
 import { ROLE_LABEL } from "@/lib/rules";
+import type { Tenant } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -14,18 +18,11 @@ export default async function SistemaLayout({ children }: { children: React.Reac
     const s = await adminSession();
     if (!s) redirect("/login");
     return (
-      <Shell user={s.user} roleLabel={s.user.isMaster ? "Administrador do sistema · master" : "Administrador do sistema"}
-        context={<><span>Área</span><b>Administração do sistema</b></>}
-        nav={<>
-          <NavLink href="/" exact>Painel</NavLink>
-          <NavLink href="/empresas">Empresas</NavLink>
-          <NavLink href="/administradores">Administradores</NavLink>
-          <NavLink href="/auditoria">Auditoria</NavLink>
-          <span className="nav-sec">Conta</span>
-          <NavLink href="/conta">Minha conta</NavLink>
-        </>}>
-        {children}
-      </Shell>
+      <Suspense>
+        <Shell nav={ADMIN_NAV} user={s.user} roleLabel={s.user.isMaster ? "Administrador do sistema · master" : "Administrador do sistema"}>
+          {children}
+        </Shell>
+      </Suspense>
     );
   }
 
@@ -33,19 +30,17 @@ export default async function SistemaLayout({ children }: { children: React.Reac
     const t = await currentTenant();
     const s = await tenantSession();
     if (!s || t.status !== "ACTIVE") redirect("/login");
-    const admin = s.user.role === "TENANT_ADMIN";
+    await ensureDefaults(t.id);
+    const access = await accessOf({ ...s, tenant: s.tenant as Tenant });
+    const nav = TENANT_NAV.filter((m) => !m.perm || (m.perm === "admin" ? access.isAdmin : access.mods[m.perm] !== "nenhum"));
+    const readOnly = Object.entries(access.mods).filter(([, l]) => l === "ver").map(([k]) => k);
     return (
-      <Shell user={s.user} roleLabel={ROLE_LABEL[s.user.role]} context={<><span>Empresa</span><b>{t.name}</b></>}
-        nav={<>
-          <NavLink href="/" exact>Início</NavLink>
-          <span className="nav-sec">Estoque</span>
-          <NavLink href="/itens">Itens</NavLink>
-          {admin && <><span className="nav-sec">Administração</span><NavLink href="/usuarios">Usuários</NavLink></>}
-          <span className="nav-sec">Conta</span>
-          <NavLink href="/conta">Minha conta</NavLink>
-        </>}>
-        {children}
-      </Shell>
+      <Suspense>
+        <Shell nav={nav} context={t.name} user={s.user} readOnly={readOnly}
+          roleLabel={access.profileName && !access.isAdmin ? access.profileName : ROLE_LABEL[s.user.role]}>
+          {children}
+        </Shell>
+      </Suspense>
     );
   }
 

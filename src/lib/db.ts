@@ -2,7 +2,10 @@ import "server-only";
 import { sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import pg from "pg";
-import * as schema from "@/db/schema";
+import * as core from "@/db/schema";
+import * as erp from "@/db/erp";
+
+const schema = { ...core, ...erp };
 import { env } from "./env";
 
 type DB = NodePgDatabase<typeof schema>;

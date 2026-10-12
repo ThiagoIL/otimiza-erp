@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import type { Action, ActionState } from "@/lib/action";
 
 const Ctx = createContext<ActionState>({});
+/** Estado da última ação do formulário (erros por campo e valores digitados). */
+export const FormState = Ctx;
 
 /** Formulário ligado a uma ação do servidor, com mensagens de erro e sucesso acessíveis. */
 export function Form({ action, children, className = "form" }: { action: Action; children: ReactNode; className?: string }) {
@@ -52,7 +54,7 @@ export function Field(props: {
   const id = `f_${name}`;
   const desc = err ? `${id}_err` : hint ? `${id}_hint` : undefined;
   return (
-    <div className={`fld${full ? " full" : ""}`}>
+    <div className={`fld${full ? " full" : ""}${err ? " err" : ""}`}>
       <label htmlFor={id}>{label}{required && <span className="req" aria-hidden="true"> *</span>}</label>
       {options ? (
         <select id={id} name={name} defaultValue={dv} aria-invalid={!!err} aria-describedby={desc} required={required}>

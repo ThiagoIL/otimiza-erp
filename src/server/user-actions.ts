@@ -6,7 +6,8 @@
  */
 import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/lib/db";
+import { db, withTenant } from "@/lib/db";
+import { accessProfiles } from "@/db/erp";
 import { users, tenants, type User } from "@/db/schema";
 import { SESSION_EXPIRED, adminForAction, requestArea, tenantUserForAction, toActor } from "@/lib/context";
 import { canChangeRole, canChangeStatus, canDelete, canManage, canResetPassword, type Actor, type Target } from "@/lib/rules";
@@ -71,8 +72,15 @@ export async function createUserAction(_: ActionState, fd: FormData): Promise<Ac
 
   const temp = generateTempPassword();
   try {
+    // perfil de acesso (só para usuários de empresa e se o perfil for da própria empresa)
+    let profileId: string | null = null;
+    const perfil = typeof raw.perfil === "string" ? raw.perfil.slice(0, 64) : "";
+    if (perfil && tenantId && papel === "TENANT_USER") {
+      const [p] = await withTenant(tenantId, (tx) => tx.select({ id: accessProfiles.id }).from(accessProfiles).where(eq(accessProfiles.id, perfil)).limit(1));
+      profileId = p?.id ?? null;
+    }
     const [u] = await db.insert(users).values({
-      tenantId, name: nome, email, role: papel, passwordHash: await hashPassword(temp), mustChangePassword: true,
+      tenantId, name: nome, email, role: papel, passwordHash: await hashPassword(temp), mustChangePassword: true, profileId,
     }).returning({ id: users.id });
     await audit({ action: "usuario.criado", tenantId, userId: ctx.actor.id, userEmail: ctx.email, entity: "usuario", entityId: u.id, data: { email, papel } });
   } catch (err) {
