@@ -67,15 +67,15 @@ export async function SalesList({ searchParams }: { searchParams: Promise<SP> })
       <div className="tbl">
         {d.rows.length ? (
           <table>
-            <thead><tr><th className="num">Nº</th><th>Emissão</th><th>Cliente</th><th>Itens</th><th>Entrega</th><th>Local de entrega</th><th className="num">Total</th><th>Pagamento</th><th>Situação</th><th>Produção</th></tr></thead>
+            <thead><tr><th className="num">Nº</th><th>Emissão</th><th>Cliente</th><th>Itens</th><th>Entrega</th><th className="num">Total</th><th>Pagamento</th><th>Situação</th><th>Produção</th></tr></thead>
             <tbody>{d.rows.map(({ o, cli, first, nitems, pm, pt }) => {
               const late = o.deliveryDate && o.deliveryDate < hoje && o.status === "APROVADO";
               return (
                 <ClickRow key={o.id} href={`/pedidos/${o.id}`}>
                   <td className="num"><b>{o.number}</b></td><td className="code">{fmtD(o.issueDate)}</td><td>{cli}{o.salespersonName && <div className="muted" style={{ fontSize: 12 }}>{o.salespersonName}</div>}</td>
                   <td className="wrap" style={{ maxWidth: 260, fontSize: 12.5 }}>{first ?? "—"}{nitems > 1 && <span className="muted"> +{nitems - 1}</span>}</td>
-                  <td><span className={`badge${late ? " bad" : ""}`}>{fmtD(o.deliveryDate)}</span></td>
-                  <td className="ell">{o.deliveryPlace ?? "—"}</td>
+                  <td><span className={`badge${late ? " bad" : ""}`}>{fmtD(o.deliveryDate)}</span>
+                    {o.deliveryPlace && o.deliveryPlace !== "Retira na fábrica" && <div className="t-sub ell" style={{ maxWidth: 110 }} title={o.deliveryPlace}>{o.deliveryPlace}</div>}</td>
                   <td className="num"><b>{fmtMoney(o.total)}</b></td>
                   <td style={{ fontSize: 12.5 }}>{pm ?? ""}<div className="muted">{pt ?? ""}</div></td>
                   <td><StatusBadge color={SO_STATUS[o.status]?.color ?? "#6B7785"} label={SO_STATUS[o.status]?.label ?? o.status} /></td>
@@ -83,7 +83,7 @@ export async function SalesList({ searchParams }: { searchParams: Promise<SP> })
                 </ClickRow>
               );
             })}</tbody>
-            <tfoot><tr><td colSpan={6}>Total</td><td className="num">{fmtMoney(d.sum)}</td><td colSpan={3} /></tr></tfoot>
+            <tfoot><tr><td colSpan={5}>Total</td><td className="num">{fmtMoney(d.sum)}</td><td colSpan={3} /></tr></tfoot>
           </table>
         ) : <Empty title="Nenhum pedido neste filtro">Ajuste a busca ou os filtros, ou crie uma nova proposta.</Empty>}
         <Pager page={pg} pages={Math.max(1, Math.ceil(d.total / PAGE))} qs={pageLink(sp)} />

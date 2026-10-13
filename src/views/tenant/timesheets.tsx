@@ -75,13 +75,13 @@ export async function Timesheets({ searchParams }: { searchParams: Promise<SP> }
       </FilterBar>
       <div className="tbl">
         {d.rows.length ? (
-          <table><thead><tr><th>Data</th><th>Pessoa</th><th>OP</th><th>Produto</th><th>Etapa</th><th>Centro</th><th>Início</th><th>Fim</th><th className="num">Horas</th>{s.access.costs && <th className="num">Custo</th>}<th /></tr></thead>
+          <table><thead><tr><th>Data</th><th>Pessoa</th><th>OP</th><th>Produto</th><th>Etapa / centro</th><th>Início</th><th>Fim</th><th className="num">Horas</th>{s.access.costs && <th className="num">Custo</th>}<th /></tr></thead>
             <tbody>{d.rows.map((r) => (
               <tr key={r.t.id}><td className="code">{fmtD(r.t.date)}</td><td>{r.p}</td><td><a href={`/ops/${r.t.productionOrderId}`}><b>OP {r.opn}</b></a></td><td className="ell">{r.it}</td>
-                <td>{r.st ? <StatusBadge color={r.sc ?? "#6B7785"} label={r.st} /> : "—"}</td><td>{r.wc ?? "—"}</td><td className="code">{r.t.start}</td><td className="code">{r.t.end}</td>
+                <td>{r.st ? <StatusBadge color={r.sc ?? "#6B7785"} label={r.st} /> : "—"}{r.wc && <div className="t-sub">{r.wc}</div>}</td><td className="code">{r.t.start}</td><td className="code">{r.t.end}</td>
                 <td className="num"><b>{Number(r.t.hours).toLocaleString("pt-BR")}</b></td>{s.access.costs && <td className="num">{fmtMoney(Number(r.t.hours) * Number(r.cost ?? 0))}</td>}
                 <td className="acts">{s.edit && <TimeRowButton {...common} entry={te(r.t)} label="Editar" className="btn btn-ghost btn-sm" />}</td></tr>))}</tbody>
-            <tfoot><tr><td colSpan={8}>Total</td><td className="num">{H.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</td>{s.access.costs && <td className="num">{fmtMoney(C)}</td>}<td /></tr></tfoot></table>
+            <tfoot><tr><td colSpan={7}>Total</td><td className="num">{H.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</td>{s.access.costs && <td className="num">{fmtMoney(C)}</td>}<td /></tr></tfoot></table>
         ) : <Empty title="Nenhum apontamento no período">Ajuste as datas ou registre as horas trabalhadas.</Empty>}
       </div>
     </>

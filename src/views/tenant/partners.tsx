@@ -69,12 +69,12 @@ export async function PartnersList({ searchParams }: { searchParams: Promise<SP>
       <div className="tbl">
         {d.rows.length ? (
           <table>
-            <thead><tr><th>Nome</th><th>Tipo</th><th>Perfil</th><th>CNPJ/CPF</th><th>Cidade</th><th>Telefone</th><th>E-mail</th><th>Situação</th></tr></thead>
+            <thead><tr><th>Nome</th><th>Tipo</th><th>CNPJ/CPF</th><th>Cidade</th><th>Telefone</th><th>E-mail</th><th>Situação</th></tr></thead>
             <tbody>{d.rows.map(({ p, perf, cor }) => (
               <ClickRow key={p.id} href={`/clientes/${p.id}`} style={!p.active ? { opacity: 0.6 } : undefined}>
                 <td className="desc">{p.tradeName || p.name}{p.tradeName && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{p.name}</div>}</td>
-                <td><span className="badges">{p.kinds.map((k) => <span key={k} className="badge">{k}</span>)}</span></td>
-                <td>{perf ? <StatusBadge color={cor ?? "#6B7785"} label={perf} /> : "—"}</td>
+                <td><span className="badges">{p.kinds.map((k) => <span key={k} className="badge">{k}</span>)}</span>
+                  {perf && <div className="t-sub"><span className="sdot" style={{ background: cor ?? "#6B7785" }} />{perf}</div>}</td>
                 <td className="code">{p.document || "—"}</td><td>{p.city ? `${p.city}/${p.uf ?? ""}` : "—"}</td>
                 <td>{p.phone || p.mobile1 || "—"}</td><td>{p.email || "—"}</td><td><Active on={p.active} /></td>
               </ClickRow>))}</tbody>

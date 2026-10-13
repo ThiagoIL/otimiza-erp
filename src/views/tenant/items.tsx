@@ -68,7 +68,7 @@ export async function TenantItems({ searchParams }: { searchParams: Promise<SP> 
       <div className="tbl">
         {data.rows.length ? (
           <table>
-            <thead><tr><th>Código</th><th>Descrição</th><th>Grupo</th><th>Tipo</th><th>Un.</th><th className="num">Est. mínimo</th><th className="num">Saldo</th><th className="num">Custo médio</th><th className="num">Preço de venda</th><th>Situação</th></tr></thead>
+            <thead><tr><th>Código</th><th>Descrição</th><th>Grupo</th><th>Tipo</th><th>Un.</th><th className="num">Est. mínimo</th><th className="num">Saldo</th><th className="num">Custo médio</th><th>Situação</th></tr></thead>
             <tbody>{data.rows.map(({ i, g, t, nb }) => {
               const bal = balanceOf(data.bal, i.id);
               const below = Number(i.minStock) > 0 && bal < Number(i.minStock);
@@ -79,7 +79,7 @@ export async function TenantItems({ searchParams }: { searchParams: Promise<SP> 
                     {(i.type === "PRODUTO_ACABADO" || i.type === "SEMIACABADO") && !nb && <div><span className="badge warn" style={{ marginTop: 3 }}>Sem estrutura</span></div>}</td>
                   <td>{g ?? "—"}</td><td>{t ?? "—"}</td><td>{i.unit}</td>
                   <td className="num">{fmtQty(i.minStock)}</td><td className="num"><b className={below ? "t-bad" : ""}>{fmtQty(bal)}</b></td>
-                  <td className="num">{fmtMoney(data.cost.get(i.id))}</td><td className="num">{fmtMoney(i.salePrice)}</td>
+                  <td className="num">{fmtMoney(data.cost.get(i.id))}</td>
                   <td><Active on={i.active} /></td>
                 </ClickRow>
               );

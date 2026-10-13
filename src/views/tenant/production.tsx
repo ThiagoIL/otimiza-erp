@@ -149,16 +149,16 @@ export async function OpsPage({ searchParams }: { searchParams: Promise<SP> }) {
         : mode === "quadro" ? <OpBoard stages={stages} ops={cards} canEdit={s.edit} /> : (
           <div className="tbl">
             {rows.length ? (
-              <table><thead><tr><th className="num">Nº</th><th>Código</th><th>Produto</th><th className="num">Qtd.</th><th className="num">Produzido</th><th>Cliente / pedido</th><th>Necessidade</th><th>Etapa</th><th>Centro</th><th>Responsável</th><th>Progresso</th></tr></thead>
+              <table><thead><tr><th className="num">Nº</th><th>Produto</th><th className="num">Produzido</th><th>Cliente / pedido</th><th>Necessidade</th><th>Etapa</th><th>Centro / responsável</th><th>Progresso</th></tr></thead>
                 <tbody>{rows.map((r, k) => {
                   const st = L.stages.find((x) => x.id === r.o.stageId);
                   const late = r.o.needDate && r.o.needDate < hoje && r.kind !== "finalizada" && r.kind !== "cancelada";
                   return (
-                    <ClickRow key={r.o.id} href={`/ops/${r.o.id}`}><td className="num"><b>{r.o.number}</b></td><td className="code">{r.i.code}</td><td className="desc">{r.i.name}</td>
-                      <td className="num">{fmtQty(r.o.qty)}</td><td className="num">{fmtQty(r.o.qtyProduced)}</td>
+                    <ClickRow key={r.o.id} href={`/ops/${r.o.id}`}><td className="num"><b>{r.o.number}</b></td><td className="desc">{r.i.name}<div className="t-sub code">{r.i.code}</div></td>
+                      <td className="num">{fmtQty(r.o.qtyProduced)} de {fmtQty(r.o.qty)}</td>
                       <td style={{ fontSize: 12.5 }}>{r.cli ?? "—"}{r.pv && <div className="muted">PV {r.pv}</div>}</td>
                       <td><span className={`badge${late ? " bad" : ""}`}>{fmtD(r.o.needDate)}</span></td>
-                      <td>{st && <StatusBadge color={st.color} label={st.name} />}</td><td>{r.wc ?? "—"}</td><td>{r.resp ?? "—"}</td>
+                      <td>{st && <StatusBadge color={st.color} label={st.name} />}</td><td>{r.wc ?? "—"}{r.resp && <div className="t-sub">{r.resp}</div>}</td>
                       <td><div className="cell-prog" style={{ ["--c" as string]: st?.color ?? "#2E7D4F" }}><div className="prog"><i style={{ width: `${cards[k].progress}%` }} /></div><span className="prog-t">{cards[k].progress}%</span></div></td>
                     </ClickRow>
                   );

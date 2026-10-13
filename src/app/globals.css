@@ -1,7 +1,7 @@
 /* Otimiza+ ERP — identidade "Aço e energia" (mesmo design do protótipo) */
 @font-face { font-family: "Ubuntu"; src: url("./fonts/Ubuntu-Regular.ttf") format("truetype"); font-weight: 400; font-display: swap; }
-@font-face { font-family: "Ubuntu"; src: url("./fonts/Ubuntu-Medium.ttf") format("truetype"); font-weight: 500 600; font-display: swap; }
-@font-face { font-family: "Ubuntu"; src: url("./fonts/Ubuntu-Bold.ttf") format("truetype"); font-weight: 700 800; font-display: swap; }
+@font-face { font-family: "Ubuntu"; src: url("./fonts/Ubuntu-Medium.ttf") format("truetype"); font-weight: 500; font-display: swap; }
+@font-face { font-family: "Ubuntu"; src: url("./fonts/Ubuntu-Bold.ttf") format("truetype"); font-weight: 600 800; font-display: swap; }
 
 :root{
   --bg:#E8ECF1; --surface:#FFFFFF; --surface-2:#F3F5F8; --line:#D3DAE3; --line-2:#E3E8EE;
@@ -530,7 +530,7 @@ h1,h2,h3,.kpi b,.brand{font-family:"Ubuntu",system-ui,sans-serif}
    ===================================================================================== */
 .app { min-height: 100vh; height: 100vh; }
 .view { position: relative; }
-.alert { padding: 10px 14px; border-radius: var(--r); font-size: 13.5px; margin-bottom: 14px; border-left: 3px solid; }
+.alert:not(.kpi) { padding: 10px 14px; border-radius: var(--r); font-size: 13.5px; margin-bottom: 14px; border-left: 3px solid; }
 .alert.bad { background: var(--bad-soft); color: var(--bad); border-color: var(--bad); }
 .alert.ok { background: var(--ok-soft); color: var(--ok); border-color: var(--ok); }
 .alert.warn { background: var(--warn-soft); color: var(--warn); border-color: var(--warn); }
@@ -616,13 +616,6 @@ input[type=file] { font-size: 13px; }
 .picker-t tr.sel td { background: color-mix(in srgb, var(--amber) 9%, var(--surface)); }
 .picker-t td input[type=number] { width: 90px; height: 28px; text-align: right; }
 .chk-cell { width: 36px; }
-.home-fit { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 14px; height: calc(100vh - 56px - 64px); min-height: 560px; }
-.home-fit .panel { display: flex; flex-direction: column; min-height: 0; }
-.home-fit .al-scroll { overflow-y: auto; min-height: 0; flex: 1; }
-.home-fit .flow svg { min-width: 820px; width: 100%; height: auto; max-height: 36vh; }
-.home-fit > .panel:nth-child(2) { min-height: 200px; }
-@media (max-width: 900px) { .home-fit { height: auto; display: flex; flex-direction: column; } }
-.hello { margin-bottom: 0; }
 .kanban.crm .col { flex-basis: 272px; }
 .card .val { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
 .empty-inline { padding: 18px; color: var(--muted); font-size: 13px; text-align: center; }
@@ -645,3 +638,9 @@ input[type=file] { font-size: 13px; }
 input:not([type]) { width: 100%; height: 36px; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); color: var(--ink); min-width: 0; }
 input:not([type]):focus { outline: none; border-color: var(--focus); box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 20%, transparent); }
 .items-t input:not([type]) { height: 32px; }
+
+/* linha secundária dentro de uma célula (situação interna, local de entrega) */
+.t-sub{font-size:12px;color:var(--muted);margin-top:3px;display:flex;align-items:center;gap:5px;white-space:nowrap}
+.t-sub .sdot{width:7px;height:7px;border-radius:50%;flex:none}
+/* seletor de período no cabeçalho da página: só os botões, sem a moldura da barra (como no protótipo) */
+.ph .acts .bar.solo{border:0;background:none;padding:0;margin:0}

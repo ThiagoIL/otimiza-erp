@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { page } from "@/lib/access";
 import * as E from "@/db/erp";
 import { HomeAlerts, type Alert } from "@/components/HomeUI";
+import { Kpi } from "@/components/ui";
 import { balances, balanceOf } from "@/server/common";
 import { addDays, diffDays, fmtD, today } from "@/lib/dates";
 import { fmtMoney } from "@/lib/format";
@@ -123,18 +124,45 @@ async function buildAlerts(s: Awaited<ReturnType<typeof page>>): Promise<Alert[]
   });
 }
 
+/** Valor curto para os indicadores: "487 mil", "1,2 mi" (igual ao protótipo). */
+const kfmt = (v: number) => Math.abs(v) >= 1e6 ? `${(v / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`
+  : Math.abs(v) >= 1e3 ? `${Math.round(v / 1e3).toLocaleString("pt-BR")} mil` : Math.round(v).toLocaleString("pt-BR");
+
+async function homeKpis(s: Awaited<ReturnType<typeof page>>) {
+  const hoje = today();
+  return s.tx(async (tx) => {
+    const [k] = (await tx.execute<{ carteira: string; abertas: number; atrasadas: number; montagens: number; receber: string }>(sql`select
+      (select coalesce(sum(total), 0) from sales_orders where status = 'APROVADO')::text carteira,
+      (select count(*) from production_orders o join production_stages st on st.id = o.stage_id where st.kind not in ('finalizada','cancelada'))::int abertas,
+      (select count(*) from production_orders o join production_stages st on st.id = o.stage_id where st.kind not in ('finalizada','cancelada') and o.need_date < ${hoje})::int atrasadas,
+      (select count(*) from assemblies where completed_at is null)::int montagens,
+      (select coalesce(sum(amount), 0) from fin_titles where kind = 'RECEBER' and status = 'ABERTO' and due_date <= ${addDays(hoje, 30)})::text receber`)).rows;
+    const items = await tx.select({ id: E.items.id, min: E.items.minStock }).from(E.items).where(sql`${E.items.active} and ${E.items.minStock} > 0`);
+    const bal = await balances(tx, { itemIds: items.map((i) => i.id) });
+    return { ...k, abaixo: items.filter((i) => balanceOf(bal, i.id) < Number(i.min)).length };
+  });
+}
+
 export async function TenantHome() {
   const s = await page(null);
-  const alerts = await buildAlerts(s);
+  const [alerts, k] = [await buildAlerts(s), await homeKpis(s)];
   const can = (m: ModuleKey) => s.access.mods[m] !== "nenhum";
   const mods = ([["producao", "Produção"], ["estoque", "Estoque"], ["comercial", "Comercial"], ["compras", "Compras"], ["financeiro", "Financeiro"]] as [ModuleKey, string][]).filter(([k]) => can(k) || (k === "estoque" && can("itens")));
   const d = new Date();
   const dataTxt = d.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long", timeZone: process.env.APP_TIMEZONE ?? "America/Sao_Paulo" });
   return (
-    <div className="home-fit">
+    <>
       <div className="hello"><h1>Olá, {s.user.name.split(" ")[0]}.</h1><p>{dataTxt[0].toUpperCase() + dataTxt.slice(1)}.</p></div>
+      <div className="kpis k6">
+        {can("comercial") && <Kpi href="/pedidos" value={kfmt(Number(k.carteira))} label="Pedidos em carteira (R$)" />}
+        {can("producao") && <Kpi href="/ops" value={k.abertas} label="OPs em aberto" />}
+        {can("producao") && <Kpi href="/ops?atraso=1" value={k.atrasadas} label="OPs atrasadas" alert={k.atrasadas > 0} />}
+        {can("producao") && <Kpi href="/montagens" value={k.montagens} label="Montagens em andamento" />}
+        {(can("estoque") || can("itens")) && <Kpi href="/estoque?sit=abaixo" value={k.abaixo} label="Itens abaixo do mínimo" alert={k.abaixo > 0} />}
+        {can("financeiro") && <Kpi href="/financeiro/receber" value={kfmt(Number(k.receber))} label="A receber em 30 dias (R$)" />}
+      </div>
       <HomeAlerts alerts={alerts} mods={mods} />
       <section className="panel"><h2>Fluxo do sistema</h2><FlowSvg can={can} /></section>
-    </div>
+    </>
   );
 }

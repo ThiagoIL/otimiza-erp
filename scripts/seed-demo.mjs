@@ -224,6 +224,9 @@ try {
   for (let w = 12; w >= 1; w--) {
     await mv({ date: D(-7 * w + 2), type: "SAIDA", itemId: IT.it07, locationId: L.e01, qty: 4 + (w % 3), unitCost: COST.it07, document: `Requisição ${140 + w}`, notes: "Consumo da solda", userName: "Almoxarifado" });
     await mv({ date: D(-7 * w + 3), type: "SAIDA", itemId: IT.it27, locationId: L.e01, qty: 1 + (w % 2), unitCost: COST.it27, document: `Requisição ${150 + w}`, notes: "Corte de perfis", userName: "Almoxarifado" });
+    const [rk, rq, rl] = [["it15", 2, "e04"], ["it21", 1, "e01"], ["it18", 60, "e01"], ["it16", 2, "e04"]][w % 4];
+    await mv({ date: D(-7 * w + 4), type: "SAIDA", itemId: IT[rk], locationId: L[rl], qty: rq, unitCost: COST[rk], document: `Requisição ${160 + w}`, notes: "Consumo da linha", userName: "Almoxarifado" });
+    if (w % 3 === 0) await mv({ date: D(-7 * w + 5), type: "SAIDA", itemId: IT.it28, locationId: L.e01, qty: 2, unitCost: COST.it28, document: `Requisição ${170 + w}`, notes: "EPI da equipe", userName: "Almoxarifado" });
   }
   await mv({ date: D(-4), type: "TRANSFERENCIA", itemId: IT.it13, locationId: L.e04, destLocationId: L.e02, qty: 6, unitCost: COST.it13, document: "Transf. 22", notes: "Chapas para a linha", userName: "Almoxarifado" });
   await mv({ date: D(-1), type: "AJUSTE", itemId: IT.it08, locationId: L.e01, qty: -4, unitCost: COST.it08, document: "Inventário", notes: "Contagem cíclica", userName: "Almoxarifado" });
@@ -248,7 +251,17 @@ try {
     }
     return id;
   }
+  // reposição periódica do que a linha consome (histórico de compras, como no protótipo)
+  await purchase("f03", [["it07", 40, 9.95], ["it06", 20, 12.17]], D(-92), "RECEBIDO");
+  await purchase("f02", [["it18", 400, 0.62], ["it19", 400, 0.28]], D(-86), "RECEBIDO");
   await purchase("f01", [["it13", 20, 385], ["it15", 16, 142], ["it16", 20, 98.4]], D(-80), "RECEBIDO");
+  await purchase("f04", [["it21", 6, 189.9], ["it23", 6, 72]], D(-72), "RECEBIDO");
+  await purchase("f01", [["it13", 12, 389], ["it17", 6, 540]], D(-65), "RECEBIDO");
+  await purchase("f02", [["it08", 300, 0.35], ["it20", 4, 58.9]], D(-58), "RECEBIDO");
+  await purchase("f01", [["it15", 12, 145], ["it16", 16, 99.9]], D(-44), "RECEBIDO");
+  await purchase("f03", [["it07", 40, 10.1], ["it27", 30, 9.8]], D(-30), "RECEBIDO");
+  await purchase("f01", [["it13", 10, 392], ["it14", 4, 612]], D(-23), "RECEBIDO");
+  await purchase("f02", [["it18", 500, 0.6]], D(-9), "RECEBIDO");
   await purchase("f03", [["it07", 60, 9.9]], D(-60), "RECEBIDO");
   await purchase("f02", [["it18", 800, 0.6], ["it19", 800, 0.27], ["it20", 6, 58.9]], D(-45), "RECEBIDO");
   await purchase("f04", [["it21", 10, 189.9], ["it22", 6, 164.5], ["it23", 8, 72]], D(-20), "RECEBIDO");
@@ -331,13 +344,17 @@ try {
   }
   // em produção
   const live = [["cl02", "it31", "s1", 8, "p3", "c1", "Normal", 0], ["cl01", "it29", "s3", 2, "p4", "c3", "Alta", 0], ["cl02", "it31", "s2", -2, "p3", "c1", "Normal", 0], ["cl05", "it32", "s1", 14, "p1", "c2", "Normal", 0],
-    ["cl07", "it30", "s4", -6, "p5", "c4", "Urgente", 0], ["cl03", "it29", "s5", -1, "p7", "c6", "Alta", 1], ["cl04", "it29", "s3", 5, "p2", "c2", "Normal", 0], ["cl06", "it29", "s4", -3, "p5", "c4", "Alta", 1]];
+    ["cl07", "it30", "s4", -6, "p5", "c4", "Urgente", 0], ["cl03", "it29", "s5", -1, "p7", "c6", "Alta", 1], ["cl04", "it29", "s3", 5, "p2", "c2", "Normal", 0], ["cl06", "it29", "s4", -3, "p5", "c4", "Alta", 1],
+    ["cl04", "it33", "s2", 11, "p3", "c1", "Normal", 0], ["cl06", "it34", "s1", 20, "p1", "c2", "Baixa", 0], ["cl05", "it31", "s1", 25, "p3", "c1", "Normal", 0], ["cl08", "it30", "s3", 9, "p8", "c3", "Normal", 0]];
   const liveOps = [];
   for (const [k, [cli, it, st, need, resp, wc, prio, produced]] of live.entries()) {
     const qty = k === 6 ? 2 : 1;
     const o = await order({ cli, lines: [[it, qty, price(it)]], status: "APROVADO", prod: "EM_PRODUCAO", issue: D(Math.min(need - 25, -6)), delivery: D(need), k, place: k % 2 ? "Entrega no cliente" : null, custom: { [CF1]: ["VW Delivery 11.180", "Accelo 1016", "Constellation 17.190", "Hyundai HR"][k % 4] } });
     liveOps.push({ ...(await op({ so: o.id, cli, it, qty, stage: st, need: D(need), start: D(Math.min(need - 20, -4)), resp, wc, prio, produced, created: D(Math.min(need - 25, -6)) })), cli, it, produced });
   }
+  for (const [i, sk, w, pk] of [[6, "s3", "c2", "p2"], [1, "s3", "c3", "p8"], [11, "s3", "c3", "p10"]])
+    await ins("time_entries", { productionOrderId: liveOps[i].id, stageId: S[sk], workCenterId: C[w], memberId: PE[pk], date: TODAY, start: "07:00", end: null, breakMinutes: 0, hours: 0, notes: "Em andamento" });
+
   // aprovados aguardando decisão da produção
   await order({ cli: "cl06", lines: [["it30", 2, price("it30")]], status: "APROVADO", prod: "PENDENTE", issue: D(-2), delivery: D(30), k: 0, place: "Av. Salgado Filho, 3200 · Natal/RN" });
   await order({ cli: "cl08", lines: [["it34", 1, price("it34")], ["it28", 10, 24.9]], status: "APROVADO", prod: "PENDENTE", issue: D(-1), delivery: D(25), k: 1 });
@@ -358,6 +375,40 @@ try {
     await ins("assembly_parts", { assemblyId: id, locationId: loc, itemId: IT.it25, qty: 2, qtyDone: x.cli === "cl03" ? 2 : 0 });
     await ins("assembly_parts", { assemblyId: id, locationId: loc, description: "Faixas refletivas (kit)", qty: 1, qtyDone: 0 });
   }
+
+  async function asm({ op, name, cli, address, resp, start, due, completed = null, notes = null, locs }) {
+    const id = await ins("assemblies", { number: ++asmN, name, productionOrderId: op, qty: 1, partnerId: P[cli], address, responsibleId: PE[resp], startDate: start, dueDate: due, completedAt: completed, notes });
+    let pos = 0;
+    const add = async (parentId, [lname, type, stage, inst, help, parts, kids]) => {
+      const lid = await ins("assembly_locations", { assemblyId: id, parentId, name: lname, type, stageId: stage ? AS[stage] : null, installerId: inst ? PE[inst] : null, helperId: help ? PE[help] : null, position: pos++ });
+      for (const [it, desc, q, done] of parts ?? []) await ins("assembly_parts", { assemblyId: id, locationId: lid, itemId: it ? IT[it] : null, description: it ? null : desc, qty: q, qtyDone: done });
+      for (const k of kids ?? []) await add(lid, k);
+    };
+    for (const l of locs) await add(null, l);
+    return id;
+  }
+  const histOps = (await c.query("select id, partner_id, item_id from production_orders where completed_at is not null order by number")).rows;
+  const opOf = (cli, it) => histOps.find((o) => o.partner_id === P[cli] && o.item_id === IT[it])?.id ?? histOps[0].id;
+  // entregue: furgão para o Vale do Jaguaribe
+  await asm({ op: opOf("cl01", "it29"), name: "Furgão 6200 · Vale do Jaguaribe", cli: "cl01", address: "Fábrica, box 3", resp: "p7", start: D(-26), due: D(-8), completed: D(-7),
+    locs: [["Veículo PRT5C67 · Constellation 17.190", "Veículo", "a4", "p8", "p9", [["it29", "", 1, 1], ["it26", "", 8, 8], ["it24", "", 4, 4], ["it25", "", 2, 2]]]] });
+  // com pendência: cliente retira na fábrica
+  await asm({ op: opOf("cl03", "it30"), name: "Carroceria fechada · Via Diesel", cli: "cl03", address: "Fábrica, box 4", resp: "p4", start: D(-9), due: D(-2), notes: "Cliente retira na fábrica",
+    locs: [["Veículo QFX7C19 · Hyundai HR", "Veículo", "a3", "p4", "p9", [["it30", "", 1, 1], ["it26", "", 6, 2], ["it01", "", 1, 0]]]] });
+  // obra com níveis: andar → apartamento → ambiente
+  await asm({ op: opOf("cl04", "it32"), name: "Residencial Ponta Negra · Torre A", cli: "cl08", address: "Av. Eng. Roberto Freire, Natal/RN", resp: "p1", start: D(-10), due: D(18),
+    notes: "Exemplo de obra com andares, apartamentos e ambientes",
+    locs: [
+      ["1º andar", "Andar", null, null, null, [], [
+        ["Apto 101", "Apartamento", null, null, null, [], [
+          ["Cozinha", "Ambiente", "a4", "p10", "p9", [[null, "Armário aéreo 1200 mm", 3, 3], [null, "Balcão de pia 1800 mm", 1, 1], [null, "Torre quente", 1, 1]]],
+          ["Banheiro social", "Ambiente", "a2", "p10", "p9", [[null, "Gabinete 800 mm", 1, 1], [null, "Espelheira", 1, 0]]]]],
+        ["Apto 102", "Apartamento", null, null, null, [], [
+          ["Cozinha", "Ambiente", "a3", "p4", "p9", [[null, "Armário aéreo 1200 mm", 3, 1], [null, "Balcão de pia 1800 mm", 1, 0], [null, "Torre quente", 1, 0]]]]]]],
+      ["2º andar", "Andar", null, null, null, [], [
+        ["Apto 201", "Apartamento", null, null, null, [], [
+          ["Cozinha", "Ambiente", "a1", "p10", "p9", [[null, "Armário aéreo 1200 mm", 3, 0], [null, "Balcão de pia 1800 mm", 1, 0], [null, "Torre quente", 1, 0]]],
+          ["Suíte", "Ambiente", "a1", "p8", "p9", [[null, "Guarda-roupa 3 portas", 1, 0], [null, "Cabeceira estofada", 1, 0]]]]]]]] });
 
   // ---------- compras: solicitações e cotação ----------
   const r1 = await ins("purchase_requests", { number: 1, requester: "Francisco Lima", department: "Produção", needDate: D(8), status: "APROVADA", notes: "Material para as OPs da próxima semana" });

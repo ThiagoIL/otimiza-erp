@@ -34,8 +34,9 @@ export function FilterBar({ children, more, moreActive = 0, right, tabs, solo }:
   const clear = () => { ref.current?.reset(); ref.current?.querySelectorAll("input,select").forEach((el) => { const i = el as HTMLInputElement; if (i.type === "checkbox") i.checked = false; else i.value = ""; }); apply(); };
   return (
     <form ref={ref} role="search" onInput={onInput} onChange={onChange} onSubmit={(e) => { e.preventDefault(); apply(); }} style={{ display: "contents" }}>
-      {tabs && <div className="bar">{tabs}</div>}
+      {/* como no protótipo: abas de situação e filtros na mesma barra (quebra linha se não couber) */}
       <div className={`bar${solo ? " solo" : ""}`}>
+        {tabs}
         {children}
         {more && (
           <button type="button" className="btn btn-sm filter-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>

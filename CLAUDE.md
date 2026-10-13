@@ -63,6 +63,12 @@ abrir `http://demo.localhost:3000`.
 - Anexos ficam no próprio PostgreSQL (até 8 MB por arquivo) para não exigir storage extra no Easypanel.
 - Código do item: manual ou automático pelo prefixo ligado ao grupo (Itens › Prefixos de código).
 
+- Visual conferido tela a tela com o protótipo HTML (out/2026): abas de situação ficam na mesma barra dos filtros,
+  indicadores no topo do Início, alertas com "Ver mais", e tabelas sem colunas extras (informação secundária vai numa
+  linha abaixo, classe `.t-sub`). Fonte: peso 600 usa Ubuntu Bold, como no protótipo.
+- Seed de demonstração (`scripts/seed-demo.mjs`) segue os dados do protótipo: 12 OPs em andamento com apontamentos
+  "em execução", 5 montagens (uma obra com andar → apartamento → ambiente), histórico de compras e consumo semanal.
+
 ## Próximos passos sugeridos
 - Emissão real de NF-e (provedor) quando for necessário.
 - Importação de cadastros por planilha.

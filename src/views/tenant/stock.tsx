@@ -80,19 +80,18 @@ export async function StockPosition({ searchParams }: { searchParams: Promise<SP
       <div className="tbl">
         {rows.length ? (
           <table>
-            <thead><tr><th>Código</th><th>Descrição</th><th>Grupo</th><th>{sp.local ? "Local" : "Onde está"}</th><th className="num">Mínimo</th><th className="num">Quantidade</th><th>Un.</th><th className="num">Custo médio</th><th className="num">Custo total</th><th>Situação</th><th><span className="sr">Ações</span></th></tr></thead>
+            <thead><tr><th>Código</th><th>Descrição</th><th>{sp.local ? "Local" : "Onde está"}</th><th className="num">Mínimo</th><th className="num">Quantidade</th><th>Un.</th><th className="num">Custo médio</th><th className="num">Custo total</th><th>Situação</th><th><span className="sr">Ações</span></th></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.i.id} className={r.below ? "flag" : ""}>
                 <td className="code">{r.i.code}</td>
-                <td className="desc"><Link className="row-link" href={`/estoque/movimentacoes?item=${encodeURIComponent(r.i.code)}`} style={{ fontWeight: 500 }}>{r.i.name}</Link>{r.i.stockAddress && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{r.i.stockAddress}</div>}</td>
-                <td style={{ fontSize: 12.5 }}>{r.g ?? "—"}</td>
-                <td style={{ fontSize: 12.5, color: "var(--ink-2)" }}>{sp.local ? L.locs.find((l) => l.id === sp.local)?.name : where(r.i.id) || "—"}</td>
+                <td className="desc"><Link className="row-link" href={`/estoque/movimentacoes?item=${encodeURIComponent(r.i.code)}`} style={{ fontWeight: 500 }}>{r.i.name}</Link>{(r.g || r.i.stockAddress) && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{[r.g, r.i.stockAddress].filter(Boolean).join(" · ")}</div>}</td>
+                <td style={{ fontSize: 12.5, color: "var(--ink-2)", whiteSpace: "normal", maxWidth: 90 }}>{sp.local ? L.locs.find((l) => l.id === sp.local)?.name : where(r.i.id) || "—"}</td>
                 <td className="num">{fmtQty(r.i.minStock)}</td><td className="num"><b className={r.qty < 0 ? "t-bad" : ""}>{fmtQty(r.qty)}</b></td><td>{r.i.unit}</td>
                 <td className="num">{fmtMoney(r.cm)}</td><td className="num">{fmtMoney(r.val)}</td>
                 <td>{r.below ? <span className="badge bad">Abaixo do mínimo</span> : r.qty <= 0 ? <span className="badge">Sem saldo</span> : r.above ? <span className="badge warn">Acima do máximo</span> : <span className="badge ok">Normal</span>}</td>
                 <td className="acts">{s.edit && <StockMoveButtons compact locations={locOpts} suppliers={supOpts} ops={opOpts} item={{ id: r.i.id, label: `${r.i.name} · ${r.i.code}` }} only={["ENTRADA", "SAIDA", "TRANSFERENCIA"]} />}</td>
               </tr>))}</tbody>
-            <tfoot><tr><td colSpan={8}>Total</td><td className="num">{fmtMoney(total)}</td><td colSpan={2} /></tr></tfoot>
+            <tfoot><tr><td colSpan={7}>Total</td><td className="num">{fmtMoney(total)}</td><td colSpan={2} /></tr></tfoot>
           </table>
         ) : <Empty title="Nenhum item neste filtro">Ajuste a busca ou os filtros.</Empty>}
       </div>

@@ -83,18 +83,19 @@ export function TitlesTable({ rows, o, R, showPaid, canEdit, openId }: { rows: (
   return (
     <>
       <table>
-        <thead><tr><th>Vencimento</th><th>Descrição</th><th>{R ? "Cliente" : "Fornecedor"}</th><th>Categoria</th><th>Parcela</th><th>Situação</th><th>Responsável</th><th className="num">Valor</th><th>Status</th>{showPaid && <th>{R ? "Recebido em" : "Pago em"}</th>}<th><span className="sr">Ações</span></th></tr></thead>
+        <thead><tr><th>Vencimento</th><th>Descrição</th><th>{R ? "Cliente" : "Fornecedor"}</th><th>Categoria</th><th>Parcela</th><th className="num">Valor</th><th>Situação</th>{showPaid && <th>{R ? "Recebido em" : "Pago em"}</th>}<th><span className="sr">Ações</span></th></tr></thead>
         <tbody>{rows.map((t) => (
           <tr key={t.id} className="click" style={t.status === "CANCELADO" ? { opacity: 0.55 } : undefined} onClick={(e) => { if (!(e.target as HTMLElement).closest("button")) setEdit(t); }}>
             <td className={`code${t.late ? " t-bad" : ""}`}>{fmtD(t.dueDate)}</td><td className="desc" style={{ minWidth: 200 }}>{t.description}{t.document && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{t.document}</div>}</td>
             <td>{t.partner || "—"}</td><td style={{ fontSize: 12.5 }}>{t.category || "—"}</td><td>{t.installment ?? ""}</td>
-            <td>{t.situation ? <span className="badge stat-badge" style={{ ["--c" as string]: t.situation.color }}>{t.situation.name}</span> : "—"}</td><td style={{ fontSize: 12.5 }}>{t.resp || "—"}</td>
             <td className="num"><b>{brl(t.amount)}</b></td>
-            <td>{t.status === "PAGO" ? <span className="badge ok">{R ? "Recebido" : "Pago"}</span> : t.status === "CANCELADO" ? <span className="badge">Cancelado</span> : t.late ? <span className="badge bad">Vencido</span> : <span className="badge warn">Em aberto</span>}</td>
+            <td>{t.status === "PAGO" ? <span className="badge ok">{R ? "Recebido" : "Pago"}</span> : t.status === "CANCELADO" ? <span className="badge">Cancelado</span> : t.late ? <span className="badge bad">Vencido</span> : <span className="badge warn">Em aberto</span>}
+              {/* situação interna e responsável ficam abaixo, para a tabela caber na tela como no protótipo */}
+              {(t.situation || t.resp) && <div className="t-sub">{t.situation && <span className="sdot" style={{ background: t.situation.color }} />}{[t.situation?.name, t.resp].filter(Boolean).join(" · ")}</div>}</td>
             {showPaid && <td className="code">{fmtD(t.paidAt)}</td>}
             <td className="acts show">{canEdit && t.status === "ABERTO" && <button type="button" className="btn btn-sm" onClick={() => setPay(t)}>{R ? "Receber" : "Pagar"}</button>}</td>
           </tr>))}</tbody>
-        <tfoot><tr><td colSpan={7}>Total</td><td className="num">{brl(total)}</td><td colSpan={showPaid ? 3 : 2} /></tr></tfoot>
+        <tfoot><tr><td colSpan={5}>Total</td><td className="num">{brl(total)}</td><td colSpan={showPaid ? 3 : 2} /></tr></tfoot>
       </table>
       {edit && <TitleModal t={edit} o={o} onClose={close} />}
       {pay && <PayModal t={pay} o={o} onClose={() => setPay(null)} />}
