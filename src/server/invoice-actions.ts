@@ -52,7 +52,9 @@ export async function createInvoiceAction(input: z.input<typeof invSchema>): Pro
       }
       // contas a receber: condição do pedido, a partir da data da nota
       const [term] = so.paymentTermId ? await tx.select().from(E.paymentTerms).where(eq(E.paymentTerms.id, so.paymentTermId)) : [];
-      const parc = installments(Number(so.total), term?.days ?? [0], d.issueDate);
+      // condição "Manual" (sem condição e com parcelas lançadas no pedido): mantém as parcelas como foram lançadas
+      const manual = !so.paymentTermId && so.installments.length > 0;
+      const parc = manual ? so.installments : installments(Number(so.total), term?.days ?? [0], d.issueDate);
       const [cat] = await tx.select({ id: E.finCategories.id }).from(E.finCategories).where(and(eq(E.finCategories.kind, "RECEBER"), eq(E.finCategories.name, "Venda de produtos"))).limit(1);
       if (Number(so.total) > 0) await tx.insert(E.finTitles).values(parc.map((x) => ({
         tenantId: s.tenant.id, kind: "RECEBER", description: `NF ${d.number} · Pedido ${so.number}`, document: `NF ${d.number}`, partnerId: so.partnerId, categoryId: cat?.id ?? null,

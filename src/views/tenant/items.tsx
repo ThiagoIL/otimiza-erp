@@ -1,4 +1,5 @@
 import { and, asc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { inGroupTree } from "@/server/queries";
 import { page } from "@/lib/access";
 import * as E from "@/db/erp";
 import { fmtMoney, fmtQty } from "@/lib/format";
@@ -17,7 +18,7 @@ export async function TenantItems({ searchParams }: { searchParams: Promise<SP> 
   const pg = Math.max(1, Math.min(1000, Number(sp.p) || 1));
   const conds: SQL[] = [eq(E.items.tenantId, s.tenant.id)];
   if (q) conds.push(or(ilike(E.items.code, `%${q}%`), ilike(E.items.name, `%${q}%`), ilike(E.items.complement, `%${q}%`))!);
-  if (sp.grupo) conds.push(eq(E.items.groupId, sp.grupo));
+  if (sp.grupo) conds.push(inGroupTree(sp.grupo));
   if (sp.tipo) conds.push(eq(E.items.typeId, sp.tipo));
   if (sp.un) conds.push(eq(E.items.unit, sp.un));
   if (sp.forn) conds.push(eq(E.items.defaultSupplierId, sp.forn));

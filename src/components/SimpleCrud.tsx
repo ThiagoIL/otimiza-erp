@@ -6,6 +6,8 @@ import { Icon } from "./Icon";
 import { Modal } from "./client";
 import { toast } from "./Toast";
 import { PageHead } from "./ui";
+import { PickField } from "./SearchPicker";
+import { searchGroupsAction } from "@/server/search-actions";
 
 export const COLORS = ["#6B7785", "#E0601A", "#1E3A5F", "#7A4FA0", "#1F8A8A", "#2E7D4F", "#B3261E", "#8A6D1F", "#2F6E9A", "#C77700"];
 
@@ -21,13 +23,29 @@ const numBR = (v: unknown) => { const n = Number(v ?? 0); return Number.isIntege
 /** Valor de um campo para preencher o formulário. */
 function inputValue(f: CField, v: unknown): string {
   if (v == null) return "";
-  if (f.t === "days") return (v as number[]).join(", ");
-  if (f.t === "list") return (v as string[]).join("; ");
+  // registro novo chega com "" nos campos de lista; só junta quando já é uma lista
+  if (f.t === "days") return Array.isArray(v) ? v.join(", ") : String(v);
+  if (f.t === "list") return Array.isArray(v) ? v.join("; ") : String(v);
   if ((f.t === "num" || f.t === "money") && Number(v) === 0) return "";
   return String(v);
 }
 
-export function FieldInput({ f, value, err }: { f: CField; value: unknown; err?: string }) {
+/** Grupo escolhido pela janela de pesquisa (o próprio registro fica fora da lista). */
+function GroupField({ f, value, rowId, err }: { f: CField; value: unknown; rowId: string; err?: string }) {
+  const id0 = typeof value === "string" ? value : "";
+  const [v, setV] = useState(id0 ? { id: id0, label: f.options?.find(([o]) => o === id0)?.[1] ?? "" } : null);
+  return (
+    <>
+      <PickField id={`f_${f.k}`} name={f.k} label={f.label} value={v} onChange={(r) => setV(r ? { id: r.id, label: r.label } : null)} className={`fld${f.full ? " full" : ""}${err ? " err" : ""}`}
+        hint={err ? undefined : f.hint} emptyText="Nenhum (grupo principal)"
+        picker={{ title: "Pesquisar grupo", fetcher: searchGroupsAction, filter: rowId, lockFilter: true, placeholder: "Nome, código ou prefixo do grupo", columns: ["Código", "Grupo", "Prefixo", "Itens"] }} />
+      {err && <div className="errmsg">{err}</div>}
+    </>
+  );
+}
+
+export function FieldInput({ f, value, err, rowId = "" }: { f: CField; value: unknown; err?: string; rowId?: string }) {
+  if (f.t === "group") return <GroupField f={f} value={value} rowId={rowId} err={err} />;
   const id = `f_${f.k}`;
   const label = <>{f.label}{f.req && <span className="req" aria-hidden="true"> *</span>}</>;
   if (f.t === "check") {
@@ -152,7 +170,7 @@ function EditModal({ row, fields, title, save, remove, onClose }: {
       <form id={formId} action={action} className="form" noValidate>
         {row.id && <input type="hidden" name="id" value={row.id} />}
         {st.error && st.fields && <div className="full alert bad">{st.error}</div>}
-        {fields.map((f) => <FieldInput key={f.k} f={f} value={vals(f.k)} err={st.fields?.[f.k]} />)}
+        {fields.map((f) => <FieldInput key={f.k} f={f} value={vals(f.k)} err={st.fields?.[f.k]} rowId={row.id} />)}
       </form>
     </Modal>
   );

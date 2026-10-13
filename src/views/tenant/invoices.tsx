@@ -77,7 +77,8 @@ export async function InvoiceNew({ searchParams }: { searchParams: Promise<SP> }
     return { orders, lines, bal, locs, next: m + 1 };
   });
   const orders = d.orders.map(({ o, cli, days, term, method }) => ({
-    id: o.id, number: o.number, client: cli, total: Number(o.total), days: days ?? [0], term: term ?? "", method: method ?? "",
+    id: o.id, number: o.number, client: cli, total: Number(o.total), days: days ?? [0], term: term ?? (o.installments.length ? "Manual" : ""), method: method ?? "",
+    manual: !o.paymentTermId && o.installments.length > 0 ? o.installments : null,
     items: d.lines.filter((x) => x.l.orderId === o.id).map(({ l, i }) => ({ itemId: i.id, name: i.name, unit: i.unit, qty: Number(l.qty), bal: Object.fromEntries(d.locs.map((lc) => [lc.id, balanceOf(d.bal, i.id, lc.id)])) })),
   }));
   const def = d.locs.find((l) => l.type === "Expedição") ?? d.locs[0];

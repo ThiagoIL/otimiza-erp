@@ -1,5 +1,6 @@
 "use server";
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { inGroupTree } from "@/server/queries";
 import { z } from "zod";
 import { act, NO_ACCESS } from "@/lib/access";
 import { audit } from "@/lib/audit";
@@ -129,7 +130,7 @@ export async function createInventoryAction(input: z.input<typeof invSchema>): P
     const id = await s.tx(async (tx) => {
       const lock = await closedUntil(tx);
       if (lock && d.date <= lock) throw new RuleError("A data do inventário precisa ser posterior ao último fechamento de estoque.");
-      const its = await tx.select({ id: E.items.id }).from(E.items).where(and(eq(E.items.active, true), d.groupId ? eq(E.items.groupId, d.groupId) : sql`true`));
+      const its = await tx.select({ id: E.items.id }).from(E.items).where(and(eq(E.items.active, true), d.groupId ? inGroupTree(d.groupId) : sql`true`));
       const bal = await balances(tx, { itemIds: its.map((i) => i.id), locationId: d.locationId, until: d.date });
       const sel = its.filter((i) => d.withZero || Math.abs(balanceOf(bal, i.id, d.locationId)) > 1e-9);
       if (!sel.length) throw new RuleError("Nenhum item com saldo neste local. Marque “incluir itens sem saldo” para contar mesmo assim.");

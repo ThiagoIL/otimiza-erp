@@ -39,12 +39,13 @@ function Kinds({ initial }: { initial: string[] }) {
 }
 
 /** Cadastro de cliente/fornecedor: informações principais e sessões de endereço e dados fiscais. */
-export function PartnerForm({ p, profiles, sellers, canEdit, defaultKind }: { p?: Partner; profiles: Opt[]; sellers: Opt[]; canEdit: boolean; defaultKind?: string }) {
+export function PartnerForm({ p, profiles, sellers, canEdit, defaultKind, base = "/clientes" }: { p?: Partner; profiles: Opt[]; sellers: Opt[]; canEdit: boolean; defaultKind?: string; base?: string }) {
   const [pf, setPf] = useState(p?.personType === "PF");
   const [active, setActive] = useState(p ? p.active : true);
   return (
     <Form action={savePartnerAction} className="sheet">
       {p && <Hidden name="id" value={p.id} />}
+      <Hidden name="base" value={base} />
       <nav className="sec-nav" aria-label="Sessões do cadastro">
         <a href="#endereco">Endereço</a><a href="#fiscal">Dados fiscais</a><a href="#anotacoes">Anotações</a><a href="#contatos">Contatos</a><a href="#anexos">Anexos</a>
       </nav>
@@ -98,7 +99,7 @@ export function PartnerForm({ p, profiles, sellers, canEdit, defaultKind }: { p?
 
       {canEdit && (
         <div className="sticky-foot">
-          <Link className="btn" href="/clientes">Voltar</Link>
+          <Link className="btn" href={base}>Voltar</Link>
           <Submit>{p ? "Salvar alterações" : "Cadastrar"}</Submit>
         </div>
       )}

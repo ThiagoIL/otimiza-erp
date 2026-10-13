@@ -104,8 +104,11 @@ export async function OpsPage({ searchParams }: { searchParams: Promise<SP> }) {
   if (sp.prio) c.push(eq(E.productionOrders.priority, sp.prio));
   if (sp.etapa) c.push(eq(E.productionOrders.stageId, sp.etapa));
   if (sp.atraso) c.push(sql`${E.productionOrders.needDate} < ${today()} and ${E.productionStages.kind} not in ('finalizada','cancelada')`);
-  if (!sp.canceladas && mode === "quadro") c.push(sql`${E.productionStages.kind} <> 'cancelada'`);
-  if (!sp.antigas && mode === "quadro") c.push(sql`(${E.productionStages.kind} <> 'finalizada' or ${E.productionOrders.completedAt} >= ${new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10)})`);
+  // por padrão só as OPs em aberto; concluídas e canceladas aparecem quando escolhidas
+  const sit = sp.sit ?? "";
+  if (sit === "concluidas") c.push(sql`${E.productionStages.kind} = 'finalizada'`);
+  else if (sit === "canceladas") c.push(sql`${E.productionStages.kind} = 'cancelada'`);
+  else if (sit !== "todas") c.push(sql`${E.productionStages.kind} not in ('finalizada', 'cancelada')`);
   const rows = await s.tx(async (tx) => tx.select({
     o: E.productionOrders, i: E.items, cli: sql<string | null>`coalesce(${E.partners.tradeName}, ${E.partners.name})`, pv: E.salesOrders.number, wc: E.workCenters.name, resp: E.teamMembers.name, kind: E.productionStages.kind,
     req: sql<string>`(select coalesce(sum(qty_required),0)::text from production_order_components c where c.production_order_id = "production_orders"."id")`,
@@ -142,8 +145,7 @@ export async function OpsPage({ searchParams }: { searchParams: Promise<SP> }) {
         <select name="prio" defaultValue={sp.prio ?? ""} aria-label="Prioridade"><option value="">Todas as prioridades</option>{Object.keys(PRIORITIES).map((p) => <option key={p}>{p}</option>)}</select>
         {mode === "lista" && <select name="etapa" defaultValue={sp.etapa ?? ""} aria-label="Etapa"><option value="">Todas as etapas</option>{L.stages.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>}
         <label className="chk"><input type="checkbox" name="atraso" value="1" defaultChecked={!!sp.atraso} /> Só atrasadas</label>
-        {mode === "quadro" && <label className="chk"><input type="checkbox" name="canceladas" value="1" defaultChecked={!!sp.canceladas} /> Mostrar canceladas</label>}
-        {mode === "quadro" && <label className="chk"><input type="checkbox" name="antigas" value="1" defaultChecked={!!sp.antigas} /> Concluídas antigas</label>}
+        <select name="sit" defaultValue={sp.sit ?? ""} aria-label="Situação"><option value="">Em aberto</option><option value="concluidas">Concluídas</option><option value="canceladas">Canceladas</option><option value="todas">Todas</option></select>
       </FilterBar>
       {!L.stages.length ? <div className="panel"><Empty title="Cadastre as etapas da produção">O quadro usa as etapas como colunas.<br /><BtnLink href="/producao/configuracoes" primary>Cadastrar etapas</BtnLink></Empty></div>
         : mode === "quadro" ? <OpBoard stages={stages} ops={cards} canEdit={s.edit} /> : (

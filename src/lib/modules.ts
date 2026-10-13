@@ -32,14 +32,13 @@ export const TENANT_NAV: NavModule[] = [
   { id: "dash", label: "Dashboards", icon: "chart", href: "/dashboards", perm: "dash" },
   {
     id: "comercial", label: "Comercial", icon: "partner", perm: "comercial", items: [
-      { href: "/crm", label: "CRM" },
       { href: "/pedidos", label: "Pedidos de venda" },
       { href: "/faturamento", label: "Faturamento" },
       { href: "/clientes", label: "Clientes e fornecedores" },
       { href: "/comercial/configuracoes", label: "Configurações", tabs: [
         { href: "/comercial/configuracoes", label: "Campos personalizados" },
         { href: "/comercial/configuracoes/perfis", label: "Perfis de cliente" },
-        { href: "/comercial/configuracoes/crm", label: "Etapas do CRM" },
+        { href: "/comercial/configuracoes/vendedores", label: "Vendedores" },
       ] },
     ],
   },
@@ -63,8 +62,6 @@ export const TENANT_NAV: NavModule[] = [
       { href: "/itens/grupos", label: "Grupos" },
       { href: "/itens/tipos", label: "Tipos" },
       { href: "/itens/unidades", label: "Unidades de medida" },
-      { href: "/itens/prefixos", label: "Prefixos de código" },
-      { href: "/itens/fornecedores", label: "Fornecedores" },
     ],
   },
   {
@@ -81,6 +78,7 @@ export const TENANT_NAV: NavModule[] = [
       { href: "/compras/solicitacoes", label: "Solicitações de compra" },
       { href: "/compras/cotacoes", label: "Cotações" },
       { href: "/compras/pedidos", label: "Pedidos de compra" },
+      { href: "/compras/fornecedores", label: "Fornecedores" },
     ],
   },
   {

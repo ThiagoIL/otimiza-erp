@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gte, ilike, lte, or, sql, type SQL } from "drizzle-orm";
+import { inGroupTree } from "@/server/queries";
 import { page, type PageCtx } from "@/lib/access";
 import * as E from "@/db/erp";
 import { Empty, PageHead, Pager, pageLink, Kpi } from "@/components/ui";
@@ -35,7 +36,7 @@ export async function StockPosition({ searchParams }: { searchParams: Promise<SP
   const L = await lookups(s);
   const c: SQL[] = [eq(E.items.active, true)];
   if (sp.q) { const q = `%${sp.q.trim()}%`; c.push(or(ilike(E.items.code, q), ilike(E.items.name, q), ilike(E.items.complement, q))!); }
-  if (sp.grupo) c.push(eq(E.items.groupId, sp.grupo));
+  if (sp.grupo) c.push(inGroupTree(sp.grupo));
   if (sp.tipo) c.push(eq(E.items.typeId, sp.tipo));
   if (sp.end) c.push(ilike(E.items.stockAddress, `%${sp.end.trim()}%`));
   const d = await s.tx(async (tx) => {
@@ -113,7 +114,7 @@ export async function StockMovements({ searchParams }: { searchParams: Promise<S
   if (sp.local) c.push(or(eq(E.stockMovements.locationId, sp.local), eq(E.stockMovements.destLocationId, sp.local))!);
   if (sp.de && isDate(sp.de)) c.push(gte(E.stockMovements.date, sp.de));
   if (sp.ate && isDate(sp.ate)) c.push(lte(E.stockMovements.date, sp.ate));
-  if (sp.grupo) c.push(eq(E.items.groupId, sp.grupo));
+  if (sp.grupo) c.push(inGroupTree(sp.grupo));
   if (sp.doc) c.push(ilike(E.stockMovements.document, `%${sp.doc.trim()}%`));
   if (sp.usuario) c.push(ilike(E.stockMovements.userName, `%${sp.usuario.trim()}%`));
   if (sp.forn) c.push(eq(E.stockMovements.partnerId, sp.forn));

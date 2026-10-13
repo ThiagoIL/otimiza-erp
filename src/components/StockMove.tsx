@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import { Modal, useRun } from "./client";
 import { ItemPicker } from "./ItemPicker";
+import { PickField } from "./SearchPicker";
+import { searchOrdersAction } from "@/server/search-actions";
 import { createMovementAction, itemStockInfoAction } from "@/server/stock-actions";
 import { today } from "@/lib/dates";
 
@@ -18,6 +20,8 @@ export function StockMoveModal({ type: t0, item, locations, suppliers, ops, opId
   const [type, setType] = useState<T>(t0);
   const [it, setIt] = useState(item);
   const [pick, setPick] = useState(false);
+  // OP de destino da saída: escolhida pela pesquisa de ordens (como o item); vinda da própria OP, fica fixa
+  const [op, setOp] = useState<{ id: string; label: string } | null>(opId ? { id: opId, label: ops?.find(([v]) => v === opId)?.[1] ?? "Ordem de produção" } : null);
   const [info, setInfo] = useState<Awaited<ReturnType<typeof itemStockInfoAction>>>(null);
   const [f, setF] = useState({ locationId: locations[0]?.[0] ?? "", destLocationId: "", qty: "", unitCost: "", date: today(), document: opId ? "" : "", notes: "", partnerId: "", productionOrderId: opId ?? "" });
   const { run, pending } = useRun();
@@ -58,7 +62,12 @@ export function StockMoveModal({ type: t0, item, locations, suppliers, ops, opId
         <div className="fld"><label htmlFor="m_dt">Data</label><input id="m_dt" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
         <div className="fld"><label htmlFor="m_doc">Documento</label><input id="m_doc" value={f.document} onChange={(e) => setF({ ...f, document: e.target.value })} placeholder="NF, requisição…" /></div>
         {type === "ENTRADA" && suppliers && <div className="fld full"><label htmlFor="m_p">Fornecedor</label><select id="m_p" value={f.partnerId} onChange={(e) => setF({ ...f, partnerId: e.target.value })}><option value="">Não informado</option>{suppliers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
-        {(type === "SAIDA" || type === "TRANSFERENCIA") && ops && <div className="fld full"><label htmlFor="m_op">Para qual ordem de produção</label><select id="m_op" value={f.productionOrderId} disabled={!!opId} onChange={(e) => setF({ ...f, productionOrderId: e.target.value })}><option value="">Nenhuma (consumo geral)</option>{ops.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select><small>A saída fica registrada como material retirado para a OP.</small></div>}
+        {(type === "SAIDA" || type === "TRANSFERENCIA") && ops && (
+          <PickField id="m_op" className="fld full" label="Para qual ordem de produção" value={op} disabled={!!opId} emptyText="Nenhuma (consumo geral)"
+            hint="A saída fica registrada como material retirado para a OP."
+            onChange={(r) => { setOp(r ? { id: r.id, label: r.label } : null); setF({ ...f, productionOrderId: r?.id ?? "" }); }}
+            picker={{ title: "Pesquisar ordem de produção", fetcher: searchOrdersAction, filter: "abertas", filters: [["abertas", "Só OPs em aberto"], ["todas", "Todas as OPs"]],
+              placeholder: "Nº da OP, produto ou cliente", columns: ["OP", "Produto", "Quantidade", "Cliente", "Etapa", "Necessidade"] }} />)}
         <div className="fld full"><label htmlFor="m_o">Observação</label><textarea id="m_o" rows={2} value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></div>
       </div>
       {pick && <ItemPicker single title="Escolher item" onClose={() => setPick(false)} priceLabel="Custo médio" priceOf={(r) => r.cost} onPick={([r]) => { setIt({ id: r.id, label: `${r.name} · ${r.code}` }); setF((x) => ({ ...x, unitCost: "" })); setPick(false); }} />}

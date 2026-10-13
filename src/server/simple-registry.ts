@@ -6,7 +6,7 @@ import * as E from "@/db/erp";
 import type { ModuleKey } from "@/lib/modules";
 
 /** Tipos de campo dos cadastros simples. */
-export type SFieldType = "text" | "textarea" | "date" | "num" | "int" | "money" | "select" | "check" | "color" | "days" | "list";
+export type SFieldType = "text" | "textarea" | "date" | "num" | "int" | "money" | "select" | "check" | "color" | "days" | "list" | "group";
 export type Opt = [string, string];
 export type SField = {
   k: string; label: string; t?: SFieldType; req?: boolean; full?: boolean; hint?: string; upper?: boolean; max?: number;
@@ -24,7 +24,18 @@ export type SEntity = {
   /** posição automática para etapas */
   autoPos?: boolean;
   where?: SQL;
+  /** regra extra antes de salvar; devolve a mensagem de erro ou null */
+  check?: (tx: Tx, values: Record<string, unknown>, id: string) => Promise<string | null>;
 };
+
+/** Caminho completo de cada grupo ("Toalha › Algodão"), para mostrar o grupo pai. */
+async function groupPaths(tx: Tx): Promise<Opt[]> {
+  const all = await tx.select({ id: E.itemGroups.id, n: E.itemGroups.name, p: E.itemGroups.parentId }).from(E.itemGroups);
+  const by = new Map(all.map((g) => [g.id, g]));
+  const path = (id: string) => { const parts: string[] = []; const seen = new Set<string>(); let g = by.get(id);
+    while (g && !seen.has(g.id)) { seen.add(g.id); parts.unshift(g.n); g = g.p ? by.get(g.p) : undefined; } return parts.join(" › "); };
+  return all.map((g) => [g.id, path(g.id)] as Opt).sort((a, b) => a[1].localeCompare(b[1], "pt-BR"));
+}
 
 const t = <T extends PgTable & { id: PgColumn; tenantId: PgColumn }>(x: T) => x as T;
 const KINDS_ITEM: Opt[] = [["MATERIA_PRIMA", "Matéria-prima (comprado e consumido)"], ["SEMIACABADO", "Semiacabado (fabricado, vira componente)"], ["PRODUTO_ACABADO", "Produto acabado (fabricado e vendido)"], ["CONSUMO", "Uso e consumo"], ["REVENDA", "Revenda (comprado e vendido)"]];
@@ -45,24 +56,28 @@ export const SIMPLE: Record<string, SEntity> = {
     uses: [[E.items, E.items.typeId, "Há itens com este tipo. Mude o tipo deles ou marque como inativo."]],
     order: () => asc(E.itemTypes.name),
   },
-  prefixos: {
-    mod: "itens", table: t(E.codePrefixes), title: "Prefixos de código", sub: "Ligue um prefixo a um grupo e o código do item novo sai automático: prefixo + número sequencial.", one: "prefixo",
-    fields: [{ k: "prefix", label: "Prefixo", req: true, hint: "Ex.: 002.01. ou MP-CH-", max: 20 }, { k: "description", label: "Descrição" }, { k: "digits", label: "Dígitos do número", t: "int", def: 3, hint: "3 gera 001, 002…" }, { k: "nextNumber", label: "Próximo número", t: "int", def: 1 }, { k: "active", label: "Prefixo ativo", t: "check", def: true }],
-    cols: [{ k: "prefix", label: "Prefixo", f: "code" }, { k: "description", label: "Descrição", f: "desc" }, { k: "digits", label: "Dígitos", f: "num" }, { k: "nextNumber", label: "Próximo", f: "num" }, { k: "active", label: "Situação", f: "active" }],
-    counts: [{ k: "g", label: "Grupos", sql: sql`(select count(*)::int from item_groups g where g.prefix_id = code_prefixes.id)`, f: "num" }],
-    uses: [[E.itemGroups, E.itemGroups.prefixId, "Há grupos usando este prefixo. Troque o prefixo deles antes de excluir."]],
-    order: () => asc(E.codePrefixes.prefix),
-  },
   grupos: {
-    mod: "itens", table: t(E.itemGroups), title: "Grupos de itens", sub: "Organizam os itens por família para filtrar estoque, compras e relatórios.", one: "grupo",
+    mod: "itens", table: t(E.itemGroups), title: "Grupos de itens", sub: "Organizam os itens por família. Um grupo pode ficar dentro de outro (ex.: Toalha › Algodão) e ter o prefixo do código automático dos itens.", one: "grupo",
     fields: [{ k: "code", label: "Código", max: 20 }, { k: "name", label: "Nome", req: true },
-      { k: "prefixId", label: "Prefixo de código", t: "select", full: true, hint: "Itens novos deste grupo podem receber o código automático com este prefixo.",
-        opts: async (tx) => (await tx.select({ id: E.codePrefixes.id, p: E.codePrefixes.prefix, d: E.codePrefixes.description }).from(E.codePrefixes).orderBy(asc(E.codePrefixes.prefix))).map((r) => [r.id, `${r.p}${r.d ? " · " + r.d : ""}`]) },
+      { k: "parentId", label: "Grupo pai", t: "group", full: true, hint: "Deixe vazio para um grupo principal. Para um subgrupo, pesquise o grupo de cima.", opts: groupPaths },
+      { k: "codePrefix", label: "Prefixo do código", max: 20, hint: "Ex.: 003.001. ou MP-CH-. Itens novos do grupo recebem prefixo + número." },
+      { k: "prefixDigits", label: "Dígitos do número", t: "int", def: 3, hint: "3 gera 001, 002…" }, { k: "nextNumber", label: "Próximo número", t: "int", def: 1 },
       { k: "description", label: "Descrição", t: "textarea", full: true }],
-    cols: [{ k: "code", label: "Código", f: "code" }, { k: "name", label: "Nome", f: "desc" }, { k: "prefixId", label: "Prefixo", f: "opt" }],
+    cols: [{ k: "code", label: "Código", f: "code" }, { k: "name", label: "Nome", f: "desc" }, { k: "parentId", label: "Grupo pai", f: "opt" }, { k: "codePrefix", label: "Prefixo", f: "code" }, { k: "nextNumber", label: "Próximo", f: "num" }],
     counts: [{ k: "n", label: "Itens", sql: sql`(select count(*)::int from items i where i.group_id = item_groups.id)`, f: "num" }],
-    uses: [[E.items, E.items.groupId, "Existem itens neste grupo. Mova-os para outro grupo antes de excluir."]],
-    order: () => asc(E.itemGroups.name),
+    uses: [[E.items, E.items.groupId, "Existem itens neste grupo. Mova-os para outro grupo antes de excluir."], [E.itemGroups, E.itemGroups.parentId, "Este grupo tem subgrupos. Mova ou exclua os subgrupos antes."]],
+    // subgrupos logo abaixo do grupo pai
+    order: () => [asc(sql`coalesce((select p.name from item_groups p where p.id = item_groups.parent_id), item_groups.name)`), asc(sql`item_groups.parent_id is not null`), asc(E.itemGroups.name)],
+    check: async (tx, v, id) => {
+      const parent = v.parentId as string | null;
+      if (!parent) return null;
+      if (parent === id) return "Um grupo não pode ser pai dele mesmo.";
+      // sobe a partir do pai escolhido: se encontrar o próprio grupo, viraria um ciclo
+      const all = await tx.select({ id: E.itemGroups.id, p: E.itemGroups.parentId }).from(E.itemGroups);
+      const up = new Map(all.map((g) => [g.id, g.p]));
+      for (let cur: string | null | undefined = parent, n = 0; cur && n < 50; cur = up.get(cur), n++) if (cur === id) return "O grupo pai escolhido está dentro deste grupo.";
+      return null;
+    },
   },
   "perfis-cliente": {
     mod: "comercial", table: t(E.partnerProfiles), title: "Perfis de cliente", sub: "Classifique os clientes (ex.: Frotista, Revenda, Construtora) para filtrar e analisar as vendas.", one: "perfil",
@@ -72,13 +87,15 @@ export const SIMPLE: Record<string, SEntity> = {
     uses: [[E.partners, E.partners.profileId, "Há clientes com este perfil. Troque o perfil deles ou marque como inativo."]],
     order: () => asc(E.partnerProfiles.name),
   },
-  "etapas-crm": {
-    mod: "comercial", table: t(E.crmStages), title: "Etapas do CRM", sub: "Colunas do funil de vendas, na ordem definida aqui. Etapas de ganho ou perda encerram a oportunidade.", one: "etapa", fem: true, autoPos: true,
-    fields: [{ k: "name", label: "Nome da etapa", req: true }, { k: "position", label: "Ordem no funil", t: "int", req: true }, { k: "kind", label: "Comportamento", t: "select", full: true, def: "aberta", opts: [["aberta", "Em andamento"], ["ganha", "Ganha (oportunidade fechada)"], ["perdida", "Perdida"]] }, { k: "color", label: "Cor", t: "color", full: true, def: "#1E3A5F" }],
-    cols: [{ k: "position", label: "Ordem", f: "num" }, { k: "name", label: "Etapa", f: "color" }, { k: "kind", label: "Comportamento", f: "opt" }],
-    counts: [{ k: "n", label: "Oportunidades", sql: sql`(select count(*)::int from crm_deals d where d.stage_id = crm_stages.id)`, f: "num" }],
-    uses: [[E.crmDeals, E.crmDeals.stageId, "Há oportunidades nesta etapa. Mova-as antes de excluir."]],
-    order: () => asc(E.crmStages.position),
+  vendedores: {
+    mod: "comercial", table: t(E.salespeople), title: "Vendedores", sub: "Vendedores internos e representantes. Aparecem no cadastro do cliente e no pedido de venda.", one: "vendedor",
+    fields: [{ k: "name", label: "Nome", req: true, full: true }, { k: "email", label: "E-mail" }, { k: "phone", label: "Telefone" },
+      { k: "commissionPct", label: "Comissão (%)", t: "num", def: 0 }, { k: "active", label: "Vendedor ativo", t: "check", def: true }],
+    cols: [{ k: "name", label: "Vendedor", f: "desc" }, { k: "email", label: "E-mail" }, { k: "phone", label: "Telefone" }, { k: "commissionPct", label: "Comissão (%)", f: "num" }, { k: "active", label: "Situação", f: "active" }],
+    counts: [{ k: "c", label: "Clientes", sql: sql`(select count(*)::int from partners p where p.salesperson_id = salespeople.id)`, f: "num" },
+      { k: "o", label: "Pedidos", sql: sql`(select count(*)::int from sales_orders o where o.salesperson_id = salespeople.id)`, f: "num" }],
+    uses: [[E.salesOrders, E.salesOrders.salespersonId, "Há pedidos com este vendedor. Marque como inativo em vez de excluir."], [E.partners, E.partners.salespersonId, "Há clientes ligados a este vendedor. Troque o vendedor deles ou marque como inativo."]],
+    order: () => asc(E.salespeople.name),
   },
   "campos-pedido": {
     mod: "comercial", table: t(E.customFields), title: "Campos personalizados do pedido", sub: "Campos extras que aparecem na sessão “Campos personalizados” do pedido de venda.", one: "campo", autoPos: true,

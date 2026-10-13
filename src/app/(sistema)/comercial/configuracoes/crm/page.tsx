@@ -1,2 +1,6 @@
-import { SimplePage } from "@/views/simple-page";
-export default function Page() { return <SimplePage k="etapas-crm" />; }
+import { redirect } from "next/navigation";
+
+// as etapas do CRM foram retiradas com o CRM
+export default function Page() {
+  redirect("/comercial/configuracoes/vendedores");
+}

@@ -115,7 +115,6 @@ async function dashCom(s: PageCtx, c: Ctx) {
     nf: await tx.select().from(E.invoices).where(sql`${E.invoices.status} = 'EMITIDA' and ${E.invoices.issueDate} >= ${c.ini}`),
     prod: await tx.select({ n: E.items.name, q: sql<string>`sum(${E.salesOrderItems.qty})::text` }).from(E.salesOrderItems).innerJoin(E.salesOrders, eq(E.salesOrders.id, E.salesOrderItems.orderId)).innerJoin(E.items, eq(E.items.id, E.salesOrderItems.itemId))
       .where(sql`${E.salesOrders.status} in ('APROVADO','FATURADO') and ${E.salesOrders.issueDate} >= ${c.ini}`).groupBy(E.items.name),
-    deals: await tx.select({ v: E.crmDeals.value, k: E.crmStages.kind, st: E.crmStages.name, col: E.crmStages.color }).from(E.crmDeals).innerJoin(E.crmStages, eq(E.crmStages.id, E.crmDeals.stageId)),
   }));
   const fechado = (s0: string) => s0 === "APROVADO" || s0 === "FATURADO";
   const vend = d.so.filter((x) => fechado(x.o.status) && x.o.issueDate >= c.ini);
@@ -126,7 +125,7 @@ async function dashCom(s: PageCtx, c: Ctx) {
   const conv = emP.length ? (emP.filter((x) => fechado(x.o.status)).length / emP.length) * 100 : null;
   const vA = c.arr(), fA = c.arr(); vend.forEach((x) => c.put(vA, x.o.issueDate, N(x.o.total))); d.nf.forEach((n) => c.put(fA, n.issueDate, N(n.total)));
   const byCli = new Map<string, number>(); vend.forEach((x) => byCli.set(x.cli, (byCli.get(x.cli) ?? 0) + N(x.o.total)));
-  const funnel = new Map<string, { v: number; c: string }>(); d.deals.filter((x) => x.k === "aberta").forEach((x) => { const f = funnel.get(x.st) ?? { v: 0, c: x.col }; f.v += N(x.v); funnel.set(x.st, f); });
+  const bySeller = new Map<string, number>(); vend.forEach((x) => { const k = x.o.salespersonName || "Sem vendedor"; bySeller.set(k, (bySeller.get(k) ?? 0) + N(x.o.total)); });
   return (
     <>
       <div className="kpis k6"><Kpi value={kfmt(tot)} label="Vendas no período (R$)" /><Kpi value={vend.length} label="Pedidos fechados" /><Kpi value={vend.length ? kfmt(tot / vend.length) : "—"} label="Ticket médio (R$)" />
@@ -136,7 +135,7 @@ async function dashCom(s: PageCtx, c: Ctx) {
         <Panel title="Pedidos por situação" sub="todos os pedidos"><div className="pb"><HBars rows={Object.entries(SO_STATUS).map(([k, x]) => ({ l: x.label, v: d.so.filter((y) => y.o.status === k).length, c: x.color }))} /></div></Panel>
         <Panel title="Clientes que mais compraram" sub="em R$ no período"><div className="pb"><HBars fmt={kfmt} rows={[...byCli].sort((a, b) => b[1] - a[1]).slice(0, 7).map(([l, v]) => ({ l, v, c: "#1E3A5F" }))} /></div></Panel>
         <Panel title="Produtos mais vendidos" sub="quantidade no período"><div className="pb"><HBars rows={d.prod.map((p) => ({ l: p.n, v: N(p.q), c: "#3F7D57" })).sort((a, b) => b.v - a.v).slice(0, 7)} /></div></Panel>
-        <Panel className="span2" title="Funil do CRM" sub="valor das oportunidades em aberto por etapa"><div className="pb"><HBars fmt={kfmt} rows={[...funnel].map(([l, x]) => ({ l, v: x.v, c: x.c }))} /></div></Panel>
+        <Panel className="span2" title="Vendas por vendedor" sub="em R$ no período"><div className="pb"><HBars fmt={kfmt} rows={[...bySeller].sort((a, b) => b[1] - a[1]).map(([l, v]) => ({ l, v, c: "#4F86C6" }))} /></div></Panel>
       </div>
     </>
   );

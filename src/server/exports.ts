@@ -1,5 +1,6 @@
 import "server-only";
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
+import { inGroupTree } from "@/server/queries";
 import type { Tx } from "@/lib/db";
 import * as E from "@/db/erp";
 import type { ModuleKey } from "@/lib/modules";
@@ -44,7 +45,7 @@ export const EXPORTS: Record<string, Export> = {
     run: async (tx, _t, sp) => {
       const c: SQL[] = [eq(E.items.active, true)];
       if (sp.q) { const q = `%${sp.q.trim()}%`; c.push(or(ilike(E.items.code, q), ilike(E.items.name, q))!); }
-      if (sp.grupo) c.push(eq(E.items.groupId, sp.grupo));
+      if (sp.grupo) c.push(inGroupTree(sp.grupo));
       if (sp.tipo) c.push(eq(E.items.typeId, sp.tipo));
       const items = await tx.select({ i: E.items, g: E.itemGroups.name }).from(E.items).leftJoin(E.itemGroups, eq(E.itemGroups.id, E.items.groupId)).where(and(...c)).orderBy(asc(E.items.name));
       const ids = items.map((x) => x.i.id);

@@ -1,1 +1,5 @@
-export { PartnerEdit as default } from "@/views/tenant/partners";
+import { PartnerEdit } from "@/views/tenant/partners";
+
+export default function Page({ params }: { params: Promise<{ id: string }> }) {
+  return <PartnerEdit params={params} />;
+}

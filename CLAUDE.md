@@ -37,7 +37,7 @@ Zod · sem bibliotecas de UI (CSS próprio em `src/app/globals.css`, herdado do 
 - `src/server/exports.ts` downloads CSV (`/api/export/<tipo>`) · `src/app/api/anexos` anexos (guardados no banco)
 
 ## Fluxo de negócio implementado
-Comercial: CRM (funil) → proposta de venda → pedido aprovado → **fila da produção** (a produção decide: gera OP ou
+Comercial: proposta de venda → pedido aprovado → **fila da produção** (a produção decide: gera OP ou
 "não precisa de produção") → faturamento (baixa estoque + contas a receber).
 Produção: OP copia a estrutura do item; produção aponta o que foi feito, inclui itens, vê retiradas de estoque da OP,
 aponta quantidade produzida (entrada no estoque) e gera **montagens** a partir do que foi produzido.
@@ -68,6 +68,22 @@ abrir `http://demo.localhost:3000`.
   linha abaixo, classe `.t-sub`). Fonte: peso 600 usa Ubuntu Bold, como no protótipo.
 - Seed de demonstração (`scripts/seed-demo.mjs`) segue os dados do protótipo: 12 OPs em andamento com apontamentos
   "em execução", 5 montagens (uma obra com andar → apartamento → ambiente), histórico de compras e consumo semanal.
+
+- Ajustes pedidos pela produção (out/2026, arquivo "ajustes.docx" + vídeo do Maxiprod):
+  - **CRM retirado** (menu, rotas redirecionam para /pedidos; tabelas crm_* ficam no banco, sem uso).
+  - **Escolha por pesquisa** em tudo que pode ter muitos registros: `SearchPicker`/`PickField` (src/components/SearchPicker.tsx)
+    com as buscas em `src/server/search-actions.ts` (cliente/fornecedor, grupo, OP). Usado no pedido (cliente), na OP
+    (cliente), no item e no grupo (grupo pai) e na movimentação de estoque (OP). Itens continuam no `ItemPicker`.
+  - **Grupos com hierarquia** (`item_groups.parent_id`) e **prefixo do código no próprio grupo** (`code_prefix`,
+    `prefix_digits`, `next_number`); a tela "Prefixos de código" saiu (migração 0005 copiou os prefixos antigos).
+    Filtros por grupo incluem os subgrupos (`inGroupTree` em src/server/queries.ts).
+  - **Vendedores** têm cadastro próprio (`salespeople`, Comercial › Configurações › Vendedores); a migração 0005 criou um
+    vendedor para cada usuário que já era vendedor, com o mesmo id.
+  - **Fornecedores** ficam em Compras › Fornecedores: é a mesma tela de clientes (`PartnersList` com `area="compras"`).
+    Itens › Fornecedores saiu do menu.
+  - Pedidos e OPs mostram **só os em aberto por padrão**; faturados, concluídos e cancelados aparecem quando escolhidos.
+  - Pedido: condição **"Manual"** para lançar as parcelas uma a uma; o faturamento mantém essas parcelas.
+  - OP manual aceita **qualquer item** (produção para estoque). Início sem a faixa de indicadores e com o fluxo compacto.
 
 ## Próximos passos sugeridos
 - Emissão real de NF-e (provedor) quando for necessário.

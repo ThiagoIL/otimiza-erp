@@ -3,7 +3,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { act, NO_ACCESS } from "@/lib/access";
 import { audit } from "@/lib/audit";
 import { SIMPLE, isSimpleKey, type SField } from "./simple-registry";
-import { ruleMsg } from "./common";
+import { ruleMsg, RuleError } from "./common";
 import type { ActionState } from "@/lib/action";
 import { isDate } from "@/lib/dates";
 
@@ -29,6 +29,7 @@ function parse(f: SField, raw: string | null, fd: FormData): { v?: unknown; err?
     case "list": return { v: s.split(";").map((x) => x.trim()).filter(Boolean).slice(0, 50) };
     case "date": if (s === "") return f.req ? { err: "Preencha este campo." } : { v: null }; return isDate(s) ? { v: s } : { err: "Data inválida." };
     case "color": return { v: /^#[0-9A-Fa-f]{6}$/.test(s) ? s : "#1E3A5F" };
+    case "group": return { v: s ? s.slice(0, 64) : null };
     default: {
       if (!s) return f.req ? { err: "Preencha este campo." } : { v: null };
       if (s.length > (f.max ?? 300)) return { err: `Use até ${f.max ?? 300} caracteres.` };
@@ -56,6 +57,8 @@ export async function saveSimpleAction(key: string, _: ActionState, fd: FormData
   const tbl = E.table;
   try {
     await s.tx(async (tx) => {
+      const bad = E.check ? await E.check(tx, values, id) : null;
+      if (bad) throw new RuleError(bad);
       if (id) {
         const r = await tx.update(tbl).set(values as never).where(and(eq(tbl.id, id), eq(tbl.tenantId, s.tenant.id))).returning({ id: tbl.id });
         if (!r.length) throw new Error("not found");

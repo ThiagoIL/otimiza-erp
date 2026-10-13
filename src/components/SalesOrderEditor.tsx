@@ -3,15 +3,17 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { Icon } from "./Icon";
 import { ItemPicker } from "./ItemPicker";
+import { PickField } from "./SearchPicker";
+import { searchPartnersAction } from "@/server/search-actions";
 import { useRun } from "./client";
 import { saveSalesOrderAction, type SOInput } from "@/server/sales-actions";
-import { docTotals, installments, r2, type Inst } from "@/lib/dates";
+import { addDays, docTotals, installments, r2, type Inst } from "@/lib/dates";
 import { PROD_STATUS } from "@/lib/consts";
 
 export type Line = { key: string; itemId: string; code: string; name: string; unit: string; qty: number; price: number; discountPct: number; notes: string };
 export type CustomField = { id: string; label: string; type: string; options: string[]; required: boolean };
 export type SOData = {
-  id?: string; number?: number; status: string; productionStatus: string | null; partnerId: string; salespersonId: string; issueDate: string; deliveryDate: string;
+  id?: string; number?: number; status: string; productionStatus: string | null; partnerId: string; partnerLabel: string; salespersonId: string; issueDate: string; deliveryDate: string;
   deliveryPlace: string; paymentMethodId: string; paymentTermId: string; installments: Inst[]; discount: number; freight: number;
   notes: string; internalNotes: string; custom: Record<string, string>; lines: Line[];
 };
@@ -21,12 +23,14 @@ const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", curren
 let seq = 0;
 const key = () => `l${++seq}`;
 
-export function SalesOrderEditor({ data, partners, sellers, methods, terms, fields, locked, canEdit }: {
-  data: SOData; partners: { id: string; label: string; place: string }[]; sellers: Opt[]; methods: Opt[]; terms: { id: string; name: string; days: number[] }[];
+export function SalesOrderEditor({ data, sellers, methods, terms, fields, locked, canEdit }: {
+  data: SOData; sellers: Opt[]; methods: Opt[]; terms: { id: string; name: string; days: number[] }[];
   fields: CustomField[]; locked: boolean; canEdit: boolean;
 }) {
   const [d, setD] = useState<SOData>(data);
   const [manualInst, setManualInst] = useState(!!data.id && data.installments.length > 0);
+  // condição "Manual": as parcelas são lançadas uma a uma (quantidade, datas e valores livres)
+  const [manualTerm, setManualTerm] = useState(!!data.id && !data.paymentTermId && data.installments.length > 0);
   const [pick, setPick] = useState(false);
   const { run, pending } = useRun();
   const ro = locked || !canEdit;
@@ -34,7 +38,8 @@ export function SalesOrderEditor({ data, partners, sellers, methods, terms, fiel
   const t = useMemo(() => docTotals(d.lines, d.discount, d.freight), [d.lines, d.discount, d.freight]);
   const term = terms.find((x) => x.id === d.paymentTermId);
   const autoInst = useMemo(() => installments(t.total, term?.days ?? [0], d.deliveryDate || d.issueDate), [t.total, term, d.deliveryDate, d.issueDate]);
-  const inst = manualInst ? d.installments : autoInst;
+  const inst = manualInst || manualTerm ? d.installments : autoInst;
+  const setInst = (a: Inst[]) => { set({ installments: a.map((x, i) => ({ ...x, n: i + 1 })) }); setManualInst(true); };
   const instSum = r2(inst.reduce((a, p) => a + p.value, 0));
   const setLine = (k: string, patch: Partial<Line>) => set({ lines: d.lines.map((l) => (l.key === k ? { ...l, ...patch } : l)) });
 
@@ -57,12 +62,11 @@ export function SalesOrderEditor({ data, partners, sellers, methods, terms, fiel
 
       <div className="sheet-top">
         <div className="form f4">
-          <div className="fld span2">
-            <label htmlFor="so_p">Cliente <span className="req">*</span></label>
-            <select id="so_p" value={d.partnerId} disabled={ro} onChange={(e) => { const p = partners.find((x) => x.id === e.target.value); set({ partnerId: e.target.value, deliveryPlace: d.deliveryPlace || p?.place || "" }); }}>
-              <option value="">Selecione o cliente…</option>{partners.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-          </div>
+          <PickField id="so_p" className="fld span2" label="Cliente" req disabled={ro} emptyText="Pesquise o cliente…"
+            value={d.partnerId ? { id: d.partnerId, label: d.partnerLabel } : null}
+            onChange={(r) => r && set({ partnerId: r.id, partnerLabel: r.label, deliveryPlace: d.deliveryPlace || r.data?.place || "", salespersonId: d.salespersonId || r.data?.salespersonId || "" })}
+            picker={{ title: "Pesquisar cliente", fetcher: searchPartnersAction, filter: "Cliente", lockFilter: true, placeholder: "Nome, fantasia, CNPJ/CPF ou cidade",
+              columns: ["Nome", "Razão social", "CNPJ/CPF", "Cidade", "Telefone"] }} />
           <div className="fld span2">
             <span className="flabel">Situação</span>
             <div className="seg" role="group" aria-label="Situação">
@@ -112,18 +116,30 @@ export function SalesOrderEditor({ data, partners, sellers, methods, terms, fiel
             <div>
               <div className="form">
                 <div className="fld"><label htmlFor="so_f">Forma de pagamento</label><select id="so_f" value={d.paymentMethodId} disabled={ro} onChange={(e) => set({ paymentMethodId: e.target.value })}><option value="">Selecione…</option>{methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-                <div className="fld"><label htmlFor="so_c">Condição</label><select id="so_c" value={d.paymentTermId} disabled={ro} onChange={(e) => { set({ paymentTermId: e.target.value }); setManualInst(false); }}><option value="">À vista</option>{terms.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+                <div className="fld"><label htmlFor="so_c">Condição</label>
+                  <select id="so_c" value={manualTerm ? "__manual" : d.paymentTermId} disabled={ro} onChange={(e) => {
+                    if (e.target.value === "__manual") { set({ paymentTermId: "", installments: inst.map((x) => ({ ...x })) }); setManualTerm(true); setManualInst(true); return; }
+                    set({ paymentTermId: e.target.value }); setManualTerm(false); setManualInst(false);
+                  }}>
+                    {!d.paymentTermId && !manualTerm && <option value="">Selecione…</option>}
+                    {terms.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                    <option value="__manual">Manual (lançar as parcelas)</option>
+                  </select></div>
               </div>
-              <div className="parc-h"><span className="flabel" style={{ margin: 0 }}>Parcelas</span>{!ro && manualInst && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManualInst(false)}>Recalcular</button>}</div>
+              <div className="parc-h"><span className="flabel" style={{ margin: 0 }}>Parcelas</span>
+                {!ro && manualTerm && <button type="button" className="btn btn-ghost btn-sm" onClick={() => { const last = inst[inst.length - 1]; const rest = r2(t.total - instSum); setInst([...inst, { n: inst.length + 1, due: last ? addDays(last.due, 30) : (d.deliveryDate || d.issueDate), value: rest > 0 ? rest : 0 }]); }}><Icon name="plus" size={14} /> Adicionar parcela</button>}
+                {!ro && manualInst && !manualTerm && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManualInst(false)}>Recalcular</button>}</div>
               <table className="parc">
-                <thead><tr><th>Nº</th><th>Vencimento</th><th className="num">Valor (R$)</th></tr></thead>
+                <thead><tr><th>Nº</th><th>Vencimento</th><th className="num">Valor (R$)</th>{manualTerm && !ro && <th />}</tr></thead>
                 <tbody>{inst.map((p, i) => (
                   <tr key={i}><td>{p.n}/{inst.length}</td>
                     <td><input type="date" value={p.due} disabled={ro} onChange={(e) => { const a = inst.map((x) => ({ ...x })); a[i].due = e.target.value; set({ installments: a }); setManualInst(true); }} aria-label="Vencimento" /></td>
-                    <td><input type="number" step="any" value={p.value} disabled={ro} onChange={(e) => { const a = inst.map((x) => ({ ...x })); a[i].value = Number(e.target.value) || 0; set({ installments: a }); setManualInst(true); }} aria-label="Valor" /></td></tr>))}</tbody>
+                    <td><input type="number" step="any" value={p.value} disabled={ro} onChange={(e) => { const a = inst.map((x) => ({ ...x })); a[i].value = Number(e.target.value) || 0; set({ installments: a }); setManualInst(true); }} aria-label="Valor" /></td>
+                    {manualTerm && !ro && <td><button type="button" className="btn btn-ghost btn-sm" aria-label={`Remover parcela ${p.n}`} onClick={() => setInst(inst.filter((_, j) => j !== i))}><Icon name="x" size={14} /></button></td>}</tr>))}
+                  {!inst.length && <tr><td colSpan={4} className="muted" style={{ fontSize: 12.5 }}>Nenhuma parcela. Use “Adicionar parcela”.</td></tr>}</tbody>
               </table>
               {Math.abs(instSum - t.total) > 0.01 && <div className="warnline">A soma das parcelas ({brl(instSum)}) difere do total ({brl(t.total)}).</div>}
-              <small className="muted" style={{ display: "block", marginTop: 6 }}>Vencimentos contados da entrega prevista. Ao faturar, são recalculados pela data da nota.</small>
+              <small className="muted" style={{ display: "block", marginTop: 6 }}>{manualTerm ? "Parcelas lançadas à mão: ajuste as datas e os valores até a soma bater com o total." : "Vencimentos contados da entrega prevista. Ao faturar, são recalculados pela data da nota."}</small>
             </div>
             <div className="totals">
               <dl>

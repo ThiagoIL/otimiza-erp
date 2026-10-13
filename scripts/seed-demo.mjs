@@ -1,5 +1,5 @@
 // Cria a empresa de demonstração "demo" com dados de exemplo em todos os módulos
-// (clientes, itens com estrutura, estoque, CRM, pedidos, OPs, montagens, compras e financeiro).
+// (clientes, vendedores, itens com estrutura, estoque, pedidos, OPs, montagens, compras e financeiro).
 // Uso: DEMO_ADMIN_PASSWORD='DemoFabrica2026' node scripts/seed-demo.mjs   (sem a variável, gera uma senha)
 // Opcional: DEMO_SLUG (padrão demo), DEMO_ADMIN_EMAIL (padrão admin@demo.com.br). Se a empresa já existe, não faz nada.
 import bcrypt from "bcryptjs";
@@ -65,9 +65,12 @@ try {
   const G = {};
   for (const [k, code, name, prefix, next] of [["g01", "MP-CH", "Chapas, perfis e tubos", "002.", 20], ["g02", "MP-SD", "Soldagem", "005.01.", 10], ["g03", "MP-FX", "Fixadores", "003.", 10], ["g04", "MP-HD", "Mangueiras e conexões", "005.17.", 30],
     ["g05", "MP-AC", "Acessórios de carroceria", "011.", 20], ["g06", "MP-PT", "Tintas e acabamento", "004.", 10], ["g07", "PA-CR", "Carrocerias (produto acabado)", "PA-", 100], ["g08", "UC", "Uso e consumo", "009.", 10]]) {
-    const prefixId = await ins("code_prefixes", { prefix, description: name, digits: 3, nextNumber: next });
-    G[k] = await ins("item_groups", { code, name, prefixId });
+    G[k] = await ins("item_groups", { code, name, codePrefix: prefix, prefixDigits: 3, nextNumber: next });
   }
+  const SP = {
+    carlos: await ins("salespeople", { name: "Carlos Andrade", email: "vendas@carroceriasmodelo.com.br", phone: "(85) 99812-3344", commissionPct: 3 }),
+    marina: await ins("salespeople", { name: "Marina Souza", email: "marina.rep@email.com", phone: "(84) 99701-5566", commissionPct: 5 }),
+  };
   const L = {};
   for (const [k, code, name, type, description] of [["e01", "001", "Almoxarifado central", "Almoxarifado", "Galpão 1, prateleiras A a F"], ["e02", "002", "Linha de montagem", "Produção", "Material liberado para a linha"],
     ["e03", "003", "Expedição", "Expedição", "Carrocerias prontas aguardando entrega"], ["e04", "004", "Pátio de chapas", "Almoxarifado", "Área coberta ao lado da guilhotina"]])
@@ -95,7 +98,7 @@ try {
   ];
   for (const [k, kinds, personType, document, name, tradeName, city, uf, em, phone, mobile1, prof, street, district, zip, cityCode] of partners)
     P[k] = await ins("partners", { kinds, personType, document: personType === "PJ" ? fixCnpj(document) : document, name, tradeName, city, uf, email: em, phone: phone || null, mobile1: mobile1 || null, profileId: prof ? PF[prof] : null,
-      street, district, zip, cityCode, stateRegIndicator: personType === "PJ" ? "1" : "9", salespersonId: kinds.includes("Cliente") ? adminId : null, finalConsumer: personType === "PF" });
+      street, district, zip, cityCode, stateRegIndicator: personType === "PJ" ? "1" : "9", salespersonId: kinds.includes("Cliente") ? (["cl02", "cl05", "cl07"].includes(k) ? SP.marina : SP.carlos) : null, finalConsumer: personType === "PF" });
   await ins("partner_contacts", { partnerId: P.cl01, name: "Raimundo Maia", role: "Gerente de frota", email: "raimundo@valejaguaribe.com.br", mobile: "(88) 99901-2233", isPrimary: true });
   await ins("partner_contacts", { partnerId: P.cl01, name: "Patrícia Lopes", role: "Financeiro", email: "financeiro@valejaguaribe.com.br", phone: "(88) 3411-2021" });
   await ins("partner_contacts", { partnerId: P.cl06, name: "Marcelo Dantas", role: "Logística", mobile: "(84) 99644-7788", isPrimary: true });
@@ -196,9 +199,6 @@ try {
   for (const [n, color] of [["Aguardando aprovação", "#C77700"], ["Aprovado para pagamento", "#2E7D4F"], ["Agendado", "#2F6E9A"]]) SIT[n] = await ins("fin_situations", { name: n, color });
   const RSP = await ins("fin_responsibles", { name: "Fernanda Rocha", email: "financeiro@carroceriasmodelo.com.br" });
   await ins("fin_responsibles", { name: "Administrador Demo" });
-  const CRM = {};
-  for (const [k, name, color, pos, kind] of [["n", "Novo contato", "#6B7785", 1, "aberta"], ["q", "Qualificação", "#2F6E9A", 2, "aberta"], ["p", "Proposta enviada", "#C77700", 3, "aberta"], ["ng", "Negociação", "#7A4FA0", 4, "aberta"], ["w", "Ganho", "#2E7D4F", 5, "ganha"], ["l", "Perdido", "#B3261E", 6, "perdida"]])
-    CRM[k] = await ins("crm_stages", { name, color, position: pos, kind });
   const CF1 = await ins("custom_fields", { entity: "sales_order", label: "Chassi / modelo do caminhão", type: "texto", position: 1 });
   const CF2 = await ins("custom_fields", { entity: "sales_order", label: "Tipo de entrega", type: "lista", options: ["Retira na fábrica", "Entrega no cliente", "Transportadora"], position: 2 });
   await ins("custom_fields", { entity: "sales_order", label: "Precisa de projeto especial", type: "sim_nao", position: 3 });
@@ -207,7 +207,7 @@ try {
   const all = (v) => ({ dash: v, comercial: v, producao: v, itens: v, estoque: v, compras: v, financeiro: v });
   const PRF = {};
   for (const [k, name, description, perms] of [
-    ["com", "Comercial", "CRM, pedidos, clientes e faturamento. Consulta produção e estoque.", { ...all("nenhum"), dash: "ver", comercial: "editar", producao: "ver", estoque: "ver", itens: "ver", custos: false }],
+    ["com", "Comercial", "Pedidos, clientes e faturamento. Consulta produção e estoque.", { ...all("nenhum"), dash: "ver", comercial: "editar", producao: "ver", estoque: "ver", itens: "ver", custos: false }],
     ["pcp", "PCP e produção", "Fila de pedidos, OPs, apontamentos, montagens e estoque. Vê custos.", { ...all("nenhum"), dash: "ver", comercial: "ver", producao: "editar", estoque: "editar", itens: "editar", compras: "ver", custos: true }],
     ["alm", "Almoxarifado e compras", "Estoque, inventário, solicitações, cotações e pedidos de compra.", { ...all("nenhum"), dash: "ver", producao: "ver", estoque: "editar", itens: "editar", compras: "editar", custos: false }],
     ["fin", "Financeiro", "Contas a pagar e receber, extrato e relatórios.", { ...all("nenhum"), dash: "ver", comercial: "ver", compras: "ver", financeiro: "editar", custos: false }],
@@ -217,6 +217,12 @@ try {
   const extra = [["Carlos Andrade", `vendas@${domain}`, PRF.com], ["Francisco Lima", `pcp@${domain}`, PRF.pcp], ["Fernanda Rocha", `financeiro@${domain}`, PRF.fin]];
   for (const [n, e, p] of extra) await c.query("insert into users (id, tenant_id, name, email, password_hash, role, must_change_password, profile_id) values ($1, $2, $3, $4, $5, 'TENANT_USER', false, $6)", [newId(), tid, n, e, hash, p]);
   await c.query("set local role erp_app");
+
+  // subgrupos de exemplo (grupo pai › subgrupo), com prefixo próprio
+  const sub1 = await ins("item_groups", { code: "MP-CH-01", name: "Chapas", parentId: G.g01, codePrefix: "002.01.", prefixDigits: 3, nextNumber: 20 });
+  const sub2 = await ins("item_groups", { code: "MP-CH-02", name: "Perfis e tubos", parentId: G.g01, codePrefix: "002.05.", prefixDigits: 3, nextNumber: 20 });
+  await c.query("update items set group_id = $1 where id = any($2)", [sub1, [IT.it13, IT.it14, IT.it17]]);
+  await c.query("update items set group_id = $1 where id = any($2)", [sub2, [IT.it15, IT.it16]]);
 
   // ---------- estoque: saldo inicial e consumo ----------
   const mv = (o) => ins("stock_movements", { userName: "Implantação", ...o });
@@ -275,7 +281,7 @@ try {
     const number = ++pv;
     const total = r2(lines.reduce((a, [, q, pr, d = 0]) => a + q * pr * (1 - d / 100), 0));
     const [cn, pmn] = conds[k % 4];
-    const id = await ins("sales_orders", { number, status, productionStatus: prod, partnerId: P[cli], salespersonId: adminId, salespersonName: "Carlos Andrade", issueDate: issue, deliveryDate: delivery,
+    const id = await ins("sales_orders", { number, status, productionStatus: prod, partnerId: P[cli], salespersonId: ["cl02", "cl05", "cl07"].includes(cli) ? SP.marina : SP.carlos, salespersonName: ["cl02", "cl05", "cl07"].includes(cli) ? "Marina Souza" : "Carlos Andrade", issueDate: issue, deliveryDate: delivery,
       deliveryPlace: place ?? "Retira na fábrica", paymentMethodId: PM[pmn], paymentTermId: PT[cn].id, installments: parc(total, PT[cn].days, delivery ?? issue), total, approvedAt: status === "PROPOSTA" ? null : issue,
       custom: custom ?? { [CF2]: place ? "Entrega no cliente" : "Retira na fábrica" } });
     let pos = 0;
@@ -440,23 +446,8 @@ try {
   await ins("bank_entries", { bankAccountId: BK, date: D(-30), description: "Transferência para o caixa", amount: -2000 });
   await ins("bank_entries", { bankAccountId: BK2, date: D(-30), description: "Transferência do banco", amount: 2000 });
 
-  // ---------- CRM ----------
-  const deals = [["Frota de 5 furgões refrigerados", "cl06", null, "ng", 245000, 12, "Cliente antigo"], ["Renovação da frota · 3 carrocerias abertas", "cl05", null, "p", 59400, 20, "Indicação"],
-    ["Basculante para obra em Parnamirim", "cl08", null, "q", 38800, 30, "Site"], ["Carroceria para caminhão novo", null, ["Distribuidora Sertão", "Paulo Henrique", "(84) 99123-4567"], "n", 22000, 25, "Telefone"],
-    ["Baú lonado para transportadora", "tr01", null, "q", 31000, 18, "Feira ou evento"], ["2 furgões 6200 para a Via Diesel", "cl03", null, "w", 101600, -5, "Cliente antigo"],
-    ["Carroceria madeira PU", "cl02", null, "l", 26100, -12, "Representante"], ["Sobre grade bovino", null, ["Fazenda Boa Vista", "Seu Antônio", "(83) 98765-0001"], "p", 18700, 9, "Indicação"]];
-  let dn = 0;
-  for (const [title, cli, lead, st, value, close, source] of deals) {
-    const did = await ins("crm_deals", { number: ++dn, title, partnerId: cli ? P[cli] : null, leadCompany: lead?.[0] ?? null, leadName: lead?.[1] ?? null, leadPhone: lead?.[2] ?? null, stageId: CRM[st], value, expectedClose: D(close),
-      ownerId: adminId, source, closedAt: st === "w" || st === "l" ? D(close) : null, lostReason: st === "l" ? "Preço acima do concorrente" : null, salesOrderId: dn === 2 ? prop1.id : null });
-    if (st !== "w" && st !== "l") {
-      await ins("crm_activities", { dealId: did, partnerId: cli ? P[cli] : null, type: "Ligação", subject: "Primeiro contato e levantamento da necessidade", dueDate: D(-8), done: true, ownerName: "Carlos Andrade" });
-      await ins("crm_activities", { dealId: did, partnerId: cli ? P[cli] : null, type: dn % 2 ? "Visita" : "WhatsApp", subject: dn % 2 ? "Visita técnica para medir o chassi" : "Enviar fotos de carrocerias já entregues", dueDate: D(dn % 3 === 0 ? -2 : dn), done: false, ownerName: "Carlos Andrade" });
-    }
-  }
-
   // ---------- numeração ----------
-  for (const [key, table] of [["sales_order", "sales_orders"], ["production_order", "production_orders"], ["purchase_order", "purchase_orders"], ["assembly", "assemblies"], ["crm_deal", "crm_deals"], ["purchase_request", "purchase_requests"], ["quotation", "quotations"]])
+  for (const [key, table] of [["sales_order", "sales_orders"], ["production_order", "production_orders"], ["purchase_order", "purchase_orders"], ["assembly", "assemblies"], ["purchase_request", "purchase_requests"], ["quotation", "quotations"]])
     await c.query(`insert into sequences (tenant_id, key, value) select $1, $2, coalesce(max(number), 0) from ${table}`, [tid, key]);
 
   await c.query("commit");

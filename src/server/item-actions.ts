@@ -1,5 +1,6 @@
 "use server";
 import { and, asc, eq, ilike, inArray, ne, or, sql, type SQL } from "drizzle-orm";
+import { inGroupTree } from "@/server/queries";
 import { z } from "zod";
 import { act, NO_ACCESS } from "@/lib/access";
 import { audit } from "@/lib/audit";
@@ -38,15 +39,16 @@ const itemSchema = z.object({
   observacoes: z.string().trim().max(2000).optional().transform((v) => v || null),
 });
 
-/** Gera o próximo código livre do prefixo do grupo e avança a numeração. */
+/** Gera o próximo código livre do prefixo do grupo e avança a numeração do grupo. */
 async function codeFromPrefix(tx: Tx, groupId: string | null): Promise<string> {
   if (!groupId) throw new RuleError("Escolha o grupo para gerar o código automático, ou digite o código.");
-  const [g] = await tx.select({ prefixId: E.itemGroups.prefixId }).from(E.itemGroups).where(eq(E.itemGroups.id, groupId)).limit(1);
-  if (!g?.prefixId) throw new RuleError("O grupo escolhido não tem prefixo de código. Ligue um prefixo ao grupo ou digite o código.");
+  const [g] = await tx.select({ prefix: E.itemGroups.codePrefix }).from(E.itemGroups).where(eq(E.itemGroups.id, groupId)).limit(1);
+  if (!g?.prefix) throw new RuleError("O grupo escolhido não tem prefixo de código. Informe o prefixo no cadastro do grupo ou digite o código.");
   for (let i = 0; i < 500; i++) {
-    const [p] = await tx.update(E.codePrefixes).set({ nextNumber: sql`${E.codePrefixes.nextNumber} + 1` }).where(eq(E.codePrefixes.id, g.prefixId))
-      .returning({ prefix: E.codePrefixes.prefix, digits: E.codePrefixes.digits, n: sql<number>`${E.codePrefixes.nextNumber} - 1` });
-    const code = p.prefix + String(p.n).padStart(p.digits, "0");
+    // a linha do grupo fica travada até o fim da transação: dois itens salvos juntos não pegam o mesmo número
+    const [p] = await tx.update(E.itemGroups).set({ nextNumber: sql`${E.itemGroups.nextNumber} + 1` }).where(eq(E.itemGroups.id, groupId))
+      .returning({ prefix: E.itemGroups.codePrefix, digits: E.itemGroups.prefixDigits, n: sql<number>`${E.itemGroups.nextNumber} - 1` });
+    const code = (p.prefix ?? "") + String(p.n).padStart(p.digits, "0");
     const [used] = await tx.select({ id: E.items.id }).from(E.items).where(eq(E.items.code, code)).limit(1);
     if (!used) return code;
   }
@@ -180,7 +182,7 @@ export async function searchItemsAction(input: z.input<typeof pickSchema>): Prom
   return s.tx(async (tx) => {
     const conds: SQL[] = [eq(E.items.active, true)];
     if (d.q.trim()) { const q = `%${d.q.trim()}%`; conds.push(or(ilike(E.items.code, q), ilike(E.items.name, q), ilike(E.items.complement, q))!); }
-    if (d.groupId) conds.push(eq(E.items.groupId, d.groupId));
+    if (d.groupId) conds.push(inGroupTree(d.groupId));
     if (d.typeId) conds.push(eq(E.items.typeId, d.typeId));
     if (d.kinds?.length) conds.push(inArray(E.items.type, d.kinds as never[]));
     if (d.exclude) conds.push(ne(E.items.id, d.exclude));

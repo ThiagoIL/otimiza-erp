@@ -123,8 +123,6 @@ export async function ensureDefaults(tenantId: string): Promise<void> {
       .map(([name, color, kind], i) => ({ name, color, kind, position: i + 1 })));
     await ins(E.assemblyStages, [["A iniciar", "#6B7785", "aguardando"], ["Em montagem", "#2F6E9A", "andamento"], ["Pendência", "#B3261E", "pendencia"], ["Concluído", "#2E7D4F", "concluido"]]
       .map(([name, color, kind], i) => ({ name, color, kind, position: i + 1 })));
-    await ins(E.crmStages, [["Novo contato", "#6B7785", "aberta"], ["Qualificação", "#2F6E9A", "aberta"], ["Proposta enviada", "#C77700", "aberta"], ["Negociação", "#7A4FA0", "aberta"], ["Ganho", "#2E7D4F", "ganha"], ["Perdido", "#B3261E", "perdida"]]
-      .map(([name, color, kind], i) => ({ name, color, kind, position: i + 1 })));
     await ins(E.paymentMethods, ["Boleto", "PIX", "Transferência", "Cartão de crédito", "Cartão de débito", "Dinheiro", "Cheque"].map((name) => ({ name })));
     await ins(E.paymentTerms, ([["À vista", [0]], ["28 dias", [28]], ["30 dias", [30]], ["30/60", [30, 60]], ["30/60/90", [30, 60, 90]], ["Entrada + 2x", [0, 30, 60]], ["Entrada + 3x", [0, 30, 60, 90]]] as const)
       .map(([name, days]) => ({ name, days: [...days] })));

@@ -41,11 +41,12 @@ export async function saveSalesOrderAction(input: SOInput): Promise<ActionState 
   if (t.total < 0) return { error: "O desconto é maior que o valor do pedido." };
   let id = d.id ?? "";
   let number = 0;
-  const salespersonName = d.salespersonId
-    ? (await db.select({ n: users.name }).from(users).where(and(eq(users.id, d.salespersonId), eq(users.tenantId, s.tenant.id))).limit(1))[0]?.n ?? null
-    : null;
   try {
     await s.tx(async (tx) => {
+      // vendedor vem do cadastro de vendedores (Comercial › Configurações › Vendedores)
+      const salespersonName = d.salespersonId
+        ? (await tx.select({ n: E.salespeople.name }).from(E.salespeople).where(eq(E.salespeople.id, d.salespersonId)).limit(1))[0]?.n ?? null
+        : null;
       // campos personalizados obrigatórios
       const cf = await tx.select().from(E.customFields).where(and(eq(E.customFields.entity, "sales_order"), eq(E.customFields.active, true)));
       const miss = cf.find((f) => f.required && !(d.custom[f.id] ?? "").trim());

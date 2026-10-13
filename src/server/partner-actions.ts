@@ -66,10 +66,15 @@ export async function savePartnerAction(_: ActionState, fd: FormData): Promise<A
     return msg.includes("CNPJ") ? { error: "Confira os campos destacados.", fields: { documento: msg }, values: { ...keepValues(raw), tipos: kinds.join("|") } } : { error: msg, values: { ...keepValues(raw), tipos: kinds.join("|") } };
   }
   await audit({ action: d.id ? "parceiro.alterado" : "parceiro.criado", tenantId: s.tenant.id, userId: s.user.id, userEmail: s.user.email, entity: "parceiro", entityId: id });
-  return { ok: true, redirectTo: `/clientes/${id}?msg=${encodeURIComponent("Cadastro salvo.")}` };
+  return { ok: true, redirectTo: `${baseOf(fd.get("base"))}/${id}?msg=${encodeURIComponent("Cadastro salvo.")}` };
 }
 
-export async function deletePartnerAction(id: string): Promise<ActionState> {
+/** O mesmo cadastro abre em Comercial (clientes) e em Compras (fornecedores); volta para a tela de onde veio. */
+function baseOf(v: unknown): string {
+  return v === "/compras/fornecedores" ? "/compras/fornecedores" : "/clientes";
+}
+
+export async function deletePartnerAction(id: string, base?: string): Promise<ActionState> {
   const s = await act(["comercial", "compras"]);
   if (!s) return NO_ACCESS;
   try {
@@ -79,7 +84,7 @@ export async function deletePartnerAction(id: string): Promise<ActionState> {
     return { error: ruleMsg(err).includes("ligado") ? "Este cadastro está ligado a pedidos, notas ou contas. Marque como inativo em vez de excluir." : ruleMsg(err) };
   }
   await audit({ action: "parceiro.excluido", tenantId: s.tenant.id, userId: s.user.id, userEmail: s.user.email, entity: "parceiro", entityId: id });
-  return { ok: true, redirectTo: "/clientes?msg=Cadastro%20exclu%C3%ADdo." };
+  return { ok: true, redirectTo: `${baseOf(base)}?msg=Cadastro%20exclu%C3%ADdo.` };
 }
 
 // ---------- contatos ----------

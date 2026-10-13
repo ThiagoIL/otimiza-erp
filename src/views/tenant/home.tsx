@@ -2,7 +2,6 @@ import { and, eq, sql } from "drizzle-orm";
 import { page } from "@/lib/access";
 import * as E from "@/db/erp";
 import { HomeAlerts, type Alert } from "@/components/HomeUI";
-import { Kpi } from "@/components/ui";
 import { balances, balanceOf } from "@/server/common";
 import { addDays, diffDays, fmtD, today } from "@/lib/dates";
 import { fmtMoney } from "@/lib/format";
@@ -11,7 +10,7 @@ import type { ModuleKey } from "@/lib/modules";
 // ------------------------------------------------------------------ Fluxo do sistema
 const LANES: [string, string][] = [["Comercial", "#1E3A5F"], ["Produção", "#C94D0B"], ["Itens e estoque", "#2B6A8F"], ["Compras", "#4F5D73"], ["Financeiro", "#2E7D4F"]];
 const NODES: [number, number, string, string, ModuleKey | null][] = [
-  [0, 0, "Clientes", "/clientes", "comercial"], [0, 1, "CRM", "/crm", "comercial"], [0, 2, "Pedidos de venda", "/pedidos", "comercial"], [0, 5, "Faturamento", "/faturamento", "comercial"],
+  [0, 1, "Clientes", "/clientes", "comercial"], [0, 2, "Pedidos de venda", "/pedidos", "comercial"], [0, 5, "Faturamento", "/faturamento", "comercial"],
   [1, 2, "Pedidos a produzir", "/producao/pedidos", "producao"], [1, 3, "Ordens de produção", "/ops", "producao"], [1, 4, "Montagens", "/montagens", "producao"],
   [2, 2, "Itens", "/itens", "itens"], [2, 3, "Estoque", "/estoque", "estoque"], [2, 4, "Inventário", "/estoque/inventarios", "estoque"],
   [3, 2, "Solicitação", "/compras/solicitacoes", "compras"], [3, 3, "Cotação", "/compras/cotacoes", "compras"], [3, 4, "Pedido de compra", "/compras/pedidos", "compras"], [3, 5, "Recebimento", "/compras/pedidos?st=ENVIADO", "compras"],
@@ -27,7 +26,7 @@ function FlowSvg({ can }: { can: (m: ModuleKey) => boolean }) {
         <defs>{LANES.map(([, c], l) => <marker key={l} id={`fa${l}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill={c} /></marker>)}</defs>
         {LANES.map(([n, c], l) => <g key={n}><rect x={0} y={l * 80} width={1070} height={80} fill={c} fillOpacity={l % 2 ? 0.05 : 0.09} /><rect x={0} y={l * 80} width={4} height={80} fill={c} /><text x={16} y={l * 80 + 44} className="fl-lane" fill={c}>{n}</text></g>)}
         {/* comercial */}
-        {A(0, `M${R(0)} ${CY(0)}H${X(1) - 3}`)}{A(0, `M${R(1)} ${CY(0)}H${X(2) - 3}`)}
+        {A(0, `M${R(1)} ${CY(0)}H${X(2) - 3}`)}
         {A(0, `M${R(2)} ${CY(0)}H${X(5) - 3}`, false, true)}
         {A(0, `M${CX(2)} ${NB(0)}V${NT(1) - 3}`)}
         {/* produção */}
@@ -96,8 +95,6 @@ async function buildAlerts(s: Awaited<ReturnType<typeof page>>): Promise<Alert[]
       const pront = await tx.select({ id: E.salesOrders.id, n: E.salesOrders.number, c: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})`, ps: E.salesOrders.productionStatus }).from(E.salesOrders)
         .innerJoin(E.partners, eq(E.partners.id, E.salesOrders.partnerId)).where(sql`${E.salesOrders.status} = 'APROVADO' and ${E.salesOrders.productionStatus} in ('PRODUZIDO','NAO_NECESSITA')`);
       for (const o of pront) A.push({ mod: "comercial", sev: 0, icon: "check", t: `Pedido ${o.n} pronto para faturar`, s: `${o.c}${o.ps === "NAO_NECESSITA" ? " · sem produção" : " · produção concluída"}`, href: `/faturamento/novo?pedido=${o.id}`, k: 0 });
-      const [{ ca }] = await tx.select({ ca: sql<number>`count(*)::int` }).from(E.crmActivities).where(sql`not ${E.crmActivities.done} and ${E.crmActivities.dueDate} < ${hoje}`);
-      if (ca) A.push({ mod: "comercial", sev: 1, icon: "clock", t: `${ca} ${ca === 1 ? "atividade do CRM atrasada" : "atividades do CRM atrasadas"}`, s: "Ligações, visitas e tarefas com data vencida", href: "/crm?modo=atividades", k: ca });
       const [{ pr }] = await tx.select({ pr: sql<number>`count(*)::int` }).from(E.salesOrders).where(sql`${E.salesOrders.status} = 'PROPOSTA' and ${E.salesOrders.issueDate} < ${addDays(hoje, -15)}`);
       if (pr) A.push({ mod: "comercial", sev: 1, icon: "doc", t: `${pr} ${pr === 1 ? "proposta sem resposta" : "propostas sem resposta"} há mais de 15 dias`, s: "Faça o acompanhamento com o cliente", href: "/pedidos?st=PROPOSTA", k: pr });
     }
@@ -124,28 +121,9 @@ async function buildAlerts(s: Awaited<ReturnType<typeof page>>): Promise<Alert[]
   });
 }
 
-/** Valor curto para os indicadores: "487 mil", "1,2 mi" (igual ao protótipo). */
-const kfmt = (v: number) => Math.abs(v) >= 1e6 ? `${(v / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi`
-  : Math.abs(v) >= 1e3 ? `${Math.round(v / 1e3).toLocaleString("pt-BR")} mil` : Math.round(v).toLocaleString("pt-BR");
-
-async function homeKpis(s: Awaited<ReturnType<typeof page>>) {
-  const hoje = today();
-  return s.tx(async (tx) => {
-    const [k] = (await tx.execute<{ carteira: string; abertas: number; atrasadas: number; montagens: number; receber: string }>(sql`select
-      (select coalesce(sum(total), 0) from sales_orders where status = 'APROVADO')::text carteira,
-      (select count(*) from production_orders o join production_stages st on st.id = o.stage_id where st.kind not in ('finalizada','cancelada'))::int abertas,
-      (select count(*) from production_orders o join production_stages st on st.id = o.stage_id where st.kind not in ('finalizada','cancelada') and o.need_date < ${hoje})::int atrasadas,
-      (select count(*) from assemblies where completed_at is null)::int montagens,
-      (select coalesce(sum(amount), 0) from fin_titles where kind = 'RECEBER' and status = 'ABERTO' and due_date <= ${addDays(hoje, 30)})::text receber`)).rows;
-    const items = await tx.select({ id: E.items.id, min: E.items.minStock }).from(E.items).where(sql`${E.items.active} and ${E.items.minStock} > 0`);
-    const bal = await balances(tx, { itemIds: items.map((i) => i.id) });
-    return { ...k, abaixo: items.filter((i) => balanceOf(bal, i.id) < Number(i.min)).length };
-  });
-}
-
 export async function TenantHome() {
   const s = await page(null);
-  const [alerts, k] = [await buildAlerts(s), await homeKpis(s)];
+  const alerts = await buildAlerts(s);
   const can = (m: ModuleKey) => s.access.mods[m] !== "nenhum";
   const mods = ([["producao", "Produção"], ["estoque", "Estoque"], ["comercial", "Comercial"], ["compras", "Compras"], ["financeiro", "Financeiro"]] as [ModuleKey, string][]).filter(([k]) => can(k) || (k === "estoque" && can("itens")));
   const d = new Date();
@@ -153,14 +131,6 @@ export async function TenantHome() {
   return (
     <>
       <div className="hello"><h1>Olá, {s.user.name.split(" ")[0]}.</h1><p>{dataTxt[0].toUpperCase() + dataTxt.slice(1)}.</p></div>
-      <div className="kpis k6">
-        {can("comercial") && <Kpi href="/pedidos" value={kfmt(Number(k.carteira))} label="Pedidos em carteira (R$)" />}
-        {can("producao") && <Kpi href="/ops" value={k.abertas} label="OPs em aberto" />}
-        {can("producao") && <Kpi href="/ops?atraso=1" value={k.atrasadas} label="OPs atrasadas" alert={k.atrasadas > 0} />}
-        {can("producao") && <Kpi href="/montagens" value={k.montagens} label="Montagens em andamento" />}
-        {(can("estoque") || can("itens")) && <Kpi href="/estoque?sit=abaixo" value={k.abaixo} label="Itens abaixo do mínimo" alert={k.abaixo > 0} />}
-        {can("financeiro") && <Kpi href="/financeiro/receber" value={kfmt(Number(k.receber))} label="A receber em 30 dias (R$)" />}
-      </div>
       <HomeAlerts alerts={alerts} mods={mods} />
       <section className="panel"><h2>Fluxo do sistema</h2><FlowSvg can={can} /></section>
     </>

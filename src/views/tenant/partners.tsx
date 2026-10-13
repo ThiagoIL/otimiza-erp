@@ -1,8 +1,6 @@
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { page, type PageCtx } from "@/lib/access";
-import { db } from "@/lib/db";
-import { users } from "@/db/schema";
 import * as E from "@/db/erp";
 import { Active, BtnLink, Empty, PageHead, Pager, pageLink, Panel, StatusBadge, UFS } from "@/components/ui";
 import { ActionButton, ClickRow, FilterBar, FilterTabs } from "@/components/client";
@@ -21,9 +19,15 @@ const PAGE = 60;
 type SP = Record<string, string | undefined>;
 const TABS = [["", "Todos"], ["Cliente", "Clientes"], ["Fornecedor", "Fornecedores"], ["Transportadora", "Transportadoras"], ["Prestador de serviço", "Prestadores"]] as const;
 
-export async function PartnersList({ searchParams }: { searchParams: Promise<SP> }) {
-  const s = await page("comercial");
-  const sp = await searchParams;
+/** Comercial › Clientes e fornecedores, ou Compras › Fornecedores (mesmo cadastro, já filtrado em fornecedor). */
+type Area = "comercial" | "compras";
+const BASE: Record<Area, string> = { comercial: "/clientes", compras: "/compras/fornecedores" };
+
+export async function PartnersList({ searchParams, area = "comercial" }: { searchParams: Promise<SP>; area?: Area }) {
+  const s = await page(area);
+  const sp = { ...(await searchParams) };
+  if (area === "compras" && sp.tipo === undefined) sp.tipo = "Fornecedor";
+  const base0 = BASE[area];
   const pg = Math.max(1, Number(sp.p) || 1);
   const conds: SQL[] = [eq(E.partners.tenantId, s.tenant.id)];
   const like = (v: string) => `%${v.trim()}%`;
@@ -46,13 +50,14 @@ export async function PartnersList({ searchParams }: { searchParams: Promise<SP>
     const profiles = await tx.select({ id: E.partnerProfiles.id, n: E.partnerProfiles.name }).from(E.partnerProfiles).orderBy(asc(E.partnerProfiles.name));
     return { rows, total, counts, all, profiles };
   });
-  const sellers = await db.select({ id: users.id, n: users.name }).from(users).where(eq(users.tenantId, s.tenant.id)).orderBy(asc(users.name));
+  const sellers = await s.tx((tx) => tx.select({ id: E.salespeople.id, n: E.salespeople.name }).from(E.salespeople).orderBy(asc(E.salespeople.name)));
   const cnt = (k: string) => (k ? d.counts.find((c) => c.k === k)?.n ?? 0 : d.all);
   const moreActive = ["vend", "contato"].filter((k) => sp[k]).length;
   return (
     <>
-      <PageHead title="Clientes e fornecedores" sub="Um cadastro único. Marque todos os papéis que a empresa ou pessoa tem com a fábrica."
-        actions={s.edit && <BtnLink href={`/clientes/novo${sp.tipo ? `?tipo=${encodeURIComponent(sp.tipo)}` : ""}`} primary icon="plus">Novo cadastro</BtnLink>} />
+      <PageHead title={area === "compras" ? "Fornecedores" : "Clientes e fornecedores"}
+        sub={area === "compras" ? "É o mesmo cadastro de clientes do Comercial, já filtrado nos fornecedores. Um cadastro pode ser cliente e fornecedor ao mesmo tempo." : "Um cadastro único. Marque todos os papéis que a empresa ou pessoa tem com a fábrica."}
+        actions={s.edit && <BtnLink href={`${base0}/novo${sp.tipo ? `?tipo=${encodeURIComponent(sp.tipo)}` : ""}`} primary icon="plus">{area === "compras" ? "Novo fornecedor" : "Novo cadastro"}</BtnLink>} />
       <FilterBar moreActive={moreActive} right={<span className="count">{d.total} cadastros</span>}
         tabs={<FilterTabs name="tipo" value={sp.tipo ?? ""} options={TABS.map(([v, l]) => ({ v, label: l, n: cnt(v) }))} />}
         more={<>
@@ -71,7 +76,7 @@ export async function PartnersList({ searchParams }: { searchParams: Promise<SP>
           <table>
             <thead><tr><th>Nome</th><th>Tipo</th><th>CNPJ/CPF</th><th>Cidade</th><th>Telefone</th><th>E-mail</th><th>Situação</th></tr></thead>
             <tbody>{d.rows.map(({ p, perf, cor }) => (
-              <ClickRow key={p.id} href={`/clientes/${p.id}`} style={!p.active ? { opacity: 0.6 } : undefined}>
+              <ClickRow key={p.id} href={`${base0}/${p.id}`} style={!p.active ? { opacity: 0.6 } : undefined}>
                 <td className="desc">{p.tradeName || p.name}{p.tradeName && <div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{p.name}</div>}</td>
                 <td><span className="badges">{p.kinds.map((k) => <span key={k} className="badge">{k}</span>)}</span>
                   {perf && <div className="t-sub"><span className="sdot" style={{ background: cor ?? "#6B7785" }} />{perf}</div>}</td>
@@ -88,27 +93,29 @@ export async function PartnersList({ searchParams }: { searchParams: Promise<SP>
 
 async function options(s: PageCtx) {
   const profiles = await s.tx((tx) => tx.select({ id: E.partnerProfiles.id, n: E.partnerProfiles.name }).from(E.partnerProfiles).where(eq(E.partnerProfiles.active, true)).orderBy(asc(E.partnerProfiles.name)));
-  const sellers = await db.select({ id: users.id, n: users.name }).from(users).where(and(eq(users.tenantId, s.tenant.id), eq(users.status, "ACTIVE"))).orderBy(asc(users.name));
+  const sellers = await s.tx((tx) => tx.select({ id: E.salespeople.id, n: E.salespeople.name }).from(E.salespeople).where(eq(E.salespeople.active, true)).orderBy(asc(E.salespeople.name)));
   return { profiles: profiles.map((p) => [p.id, p.n] as const), sellers: sellers.map((u) => [u.id, u.n] as const) };
 }
 
-export async function PartnerNew({ searchParams }: { searchParams: Promise<SP> }) {
-  const s = await page("comercial", { edit: true });
+export async function PartnerNew({ searchParams, area = "comercial" }: { searchParams: Promise<SP>; area?: Area }) {
+  const s = await page(area, { edit: true });
   const sp = await searchParams;
+  const base0 = BASE[area];
   const o = await options(s);
   return (
     <>
-      <PageHead title="Novo cadastro" back={{ href: "/clientes", label: "Clientes e fornecedores" }} />
+      <PageHead title={area === "compras" ? "Novo fornecedor" : "Novo cadastro"} back={{ href: base0, label: area === "compras" ? "Fornecedores" : "Clientes e fornecedores" }} />
       <div className="sheet">
-        <PartnerForm {...o} canEdit defaultKind={sp.tipo} />
+        <PartnerForm {...o} canEdit defaultKind={sp.tipo ?? (area === "compras" ? "Fornecedor" : undefined)} base={base0} />
         <div className="lock-note"><Icon name="lock" size={16} /> Anotações, contatos e anexos ficam disponíveis depois de salvar o cadastro.</div>
       </div>
     </>
   );
 }
 
-export async function PartnerEdit({ params }: { params: Promise<{ id: string }> }) {
-  const s = await page("comercial");
+export async function PartnerEdit({ params, area = "comercial" }: { params: Promise<{ id: string }>; area?: Area }) {
+  const s = await page(area);
+  const base0 = BASE[area];
   const { id } = await params;
   const o = await options(s);
   const d = await s.tx(async (tx) => {
@@ -129,19 +136,17 @@ export async function PartnerEdit({ params }: { params: Promise<{ id: string }> 
       pagar: sql<string>`coalesce(sum(${E.finTitles.amount}) filter (where ${E.finTitles.status} = 'ABERTO' and ${E.finTitles.kind} = 'PAGAR'), 0)::text`,
     }).from(E.finTitles).where(eq(E.finTitles.partnerId, id));
     const recent = await tx.select().from(E.salesOrders).where(eq(E.salesOrders.partnerId, id)).orderBy(desc(E.salesOrders.number)).limit(6);
-    const deals = await tx.select({ d: E.crmDeals, st: E.crmStages }).from(E.crmDeals).innerJoin(E.crmStages, eq(E.crmStages.id, E.crmDeals.stageId)).where(and(eq(E.crmDeals.partnerId, id), eq(E.crmStages.kind, "aberta")));
-    return { p, contacts, notes, files, sum, fin, recent, deals };
+    return { p, contacts, notes, files, sum, fin, recent };
   });
   if (!d) notFound();
   const { p } = d;
   const isClient = p.kinds.includes("Cliente");
   return (
     <>
-      <PageHead title={p.tradeName || p.name} sub={[p.tradeName ? p.name : null, p.document, p.city ? `${p.city}/${p.uf ?? ""}` : null].filter(Boolean).join(" · ")} back={{ href: "/clientes", label: "Clientes e fornecedores" }}
+      <PageHead title={p.tradeName || p.name} sub={[p.tradeName ? p.name : null, p.document, p.city ? `${p.city}/${p.uf ?? ""}` : null].filter(Boolean).join(" · ")} back={{ href: base0, label: area === "compras" ? "Fornecedores" : "Clientes e fornecedores" }}
         actions={<>
           {isClient && <BtnLink href={`/pedidos/novo?cliente=${p.id}`} icon="doc">Nova proposta</BtnLink>}
-          {isClient && <BtnLink href={`/crm?novo=1&cliente=${p.id}`} icon="target">Nova oportunidade</BtnLink>}
-          {s.edit && <ActionButton className="btn btn-danger" confirm="Excluir este cadastro? Cadastros com pedidos, notas ou contas não podem ser excluídos." action={deletePartnerAction.bind(null, p.id)}><Icon name="trash" size={16} /> Excluir</ActionButton>}
+          {s.edit && <ActionButton className="btn btn-danger" confirm="Excluir este cadastro? Cadastros com pedidos, notas ou contas não podem ser excluídos." action={deletePartnerAction.bind(null, p.id, base0)}><Icon name="trash" size={16} /> Excluir</ActionButton>}
         </>} />
       {isClient && (
         <div className="kpis k6" style={{ marginBottom: 16 }}>
@@ -154,12 +159,12 @@ export async function PartnerEdit({ params }: { params: Promise<{ id: string }> 
         </div>
       )}
       <div className="sheet">
-        <PartnerForm p={p} {...o} canEdit={s.edit} />
+        <PartnerForm p={p} {...o} canEdit={s.edit} base={base0} />
         <Notes partnerId={p.id} canEdit={s.edit} rows={d.notes.map((n) => ({ id: n.id, body: n.body, userName: n.userName, createdAt: n.createdAt.toISOString() }))} />
         <Contacts partnerId={p.id} canEdit={s.edit} rows={d.contacts} />
         <Attachments entity="partner" entityId={p.id} rows={d.files} canEdit={s.edit} />
         {isClient && (
-          <Panel title="Histórico comercial" sub={d.deals.length ? `${d.deals.length} oportunidade(s) em andamento no CRM` : undefined}>
+          <Panel title="Histórico comercial">
             {d.recent.length ? (
               <div className="tbl solo" style={{ border: 0, borderRadius: 0, maxHeight: "none" }}>
                 <table><thead><tr><th className="num">Nº</th><th>Emissão</th><th>Entrega</th><th className="num">Total</th><th>Situação</th></tr></thead>

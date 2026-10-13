@@ -301,7 +301,8 @@ div.kpi:hover{background:none}
 .al-i.bad{background:var(--bad-soft);color:var(--bad)}.al-i.warn{background:var(--warn-soft);color:var(--warn)}.al-i.ok{background:var(--ok-soft);color:var(--ok)}
 .al-more{padding:10px 16px;font-size:12.5px}
 .flow{overflow-x:auto;padding:0}
-.flow svg{display:block;min-width:820px;width:100%;max-width:none;height:auto}
+/* fluxo compacto: não cresce além de ~900 px, para a página inicial caber sem precisar diminuir o zoom */
+.flow svg{display:block;min-width:680px;width:100%;max-width:900px;height:auto;margin:0 auto}
 .fl-lane{font:700 13px "Ubuntu",system-ui,sans-serif}
 .fl-n{font:600 12.5px "Ubuntu",system-ui,sans-serif;fill:#fff;pointer-events:none}
 .fl-s{font:600 12px "Ubuntu",system-ui,sans-serif}
@@ -385,7 +386,7 @@ div.kpi:hover{background:none}
 /* ---------- v0.3 ---------- */
 .kpis.k4{grid-template-columns:repeat(4,minmax(0,1fr))}
 @media (max-width:800px){.kpis.k4{grid-template-columns:repeat(2,minmax(0,1fr))}}
-.al-tabs{display:flex;gap:2px;padding:8px 12px 0;border-bottom:1px solid var(--line-2);overflow-x:auto}
+.al-tabs{display:flex;gap:2px;padding:8px 12px 0;border-bottom:1px solid var(--line-2);overflow-x:auto;overflow-y:hidden}
 .al-tabs button{border:0;background:none;padding:8px 12px 9px;font-weight:600;font-size:13px;color:var(--muted);border-bottom:2px solid transparent;cursor:pointer;white-space:nowrap;margin-bottom:-1px;display:flex;gap:6px;align-items:center}
 .al-tabs button b{font-variant-numeric:tabular-nums;background:var(--surface-2);border-radius:10px;padding:0 7px;font-size:12px;color:var(--ink-2)}
 .al-tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--amber)}
@@ -644,3 +645,9 @@ input:not([type]):focus { outline: none; border-color: var(--focus); box-shadow:
 .t-sub .sdot{width:7px;height:7px;border-radius:50%;flex:none}
 /* seletor de período no cabeçalho da página: só os botões, sem a moldura da barra (como no protótipo) */
 .ph .acts .bar.solo{border:0;background:none;padding:0;margin:0}
+
+/* campo escolhido por pesquisa (cliente, grupo, OP): mostra o escolhido + botão Pesquisar */
+.pick-in{display:flex;gap:8px;align-items:center}
+.pick-in input[readonly]{flex:1;min-width:0;cursor:pointer;background:var(--surface)}
+.pick-in input[readonly]:disabled{cursor:default;background:var(--surface-2)}
+.pick-in .btn{flex:none}

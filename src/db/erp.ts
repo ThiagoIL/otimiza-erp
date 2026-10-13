@@ -113,11 +113,19 @@ export const itemGroups = pgTable("item_groups", {
   name: text("name").notNull(),
   code: text("code"),
   description: text("description"),
+  /** grupo pai (ex.: Toalha › Algodão); vazio = grupo principal */
+  parentId: text("parent_id"),
+  /** prefixo do código automático dos itens do grupo (ex.: 003.) + dígitos do número sequencial */
+  codePrefix: text("code_prefix"),
+  prefixDigits: integer("prefix_digits").notNull().default(3),
+  nextNumber: integer("next_number").notNull().default(1),
+  /** legado: prefixo cadastrado à parte (antes de o prefixo ficar no próprio grupo) */
   prefixId: text("prefix_id"),
 }, (t) => [
   uniqueIndex("item_groups_tenant_name_uq").on(t.tenantId, t.name),
   unique("item_groups_tenant_id_id_uq").on(t.tenantId, t.id),
   fk("item_groups_prefix_fk", t.tenantId, t.prefixId, () => codePrefixes),
+  fk("item_groups_parent_fk", t.tenantId, t.parentId, (): Ref => itemGroups),
 ]);
 
 export const items = pgTable("items", {
@@ -209,6 +217,16 @@ export const partnerProfiles = pgTable("partner_profiles", {
   active: boolean("active").notNull().default(true),
 }, (t) => [tid("partner_profiles_tid_uq", t), uniqueIndex("partner_profiles_name_uq").on(t.tenantId, t.name)]);
 
+/** Vendedores (internos ou representantes), usados no cliente e no pedido de venda. */
+export const salespeople = pgTable("salespeople", {
+  ...base(),
+  name: text("name").notNull(),
+  email: text("email"),
+  phone: text("phone"),
+  commissionPct: numeric("commission_pct", { precision: 5, scale: 2 }).notNull().default("0"),
+  active: boolean("active").notNull().default(true),
+}, (t) => [tid("salespeople_tid_uq", t), uniqueIndex("salespeople_name_uq").on(t.tenantId, t.name)]);
+
 export const partners = pgTable("partners", {
   ...base(),
   kinds: text("kinds").array().notNull().default([]), // Cliente, Fornecedor, Transportadora, Prestador de serviço
@@ -217,7 +235,7 @@ export const partners = pgTable("partners", {
   name: text("name").notNull(),
   tradeName: text("trade_name"),
   profileId: text("profile_id"),
-  salespersonId: text("salesperson_id"), // usuário vendedor responsável
+  salespersonId: text("salesperson_id"), // vendedor responsável (salespeople)
   active: boolean("active").notNull().default(true),
   email: text("email"),
   phone: text("phone"),
@@ -857,7 +875,7 @@ export const bankEntries = pgTable("bank_entries", {
 
 /** Tabelas de negócio com isolamento por empresa (usada na migração de RLS e nos testes). */
 export const TENANT_TABLES = [
-  "access_profiles", "company_settings", "units", "item_types", "code_prefixes", "item_bom", "item_routing", "item_suppliers",
+  "access_profiles", "company_settings", "salespeople", "units", "item_types", "code_prefixes", "item_bom", "item_routing", "item_suppliers",
   "partner_profiles", "partners", "partner_contacts", "partner_notes", "attachments", "crm_stages", "crm_deals", "crm_activities",
   "custom_fields", "payment_methods", "payment_terms", "bank_accounts", "fin_categories", "fin_situations", "fin_responsibles",
   "sales_orders", "sales_order_items", "invoices", "invoice_items", "stock_locations", "stock_movements", "inventories",

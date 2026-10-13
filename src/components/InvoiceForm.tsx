@@ -3,9 +3,9 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRun } from "./client";
 import { createInvoiceAction } from "@/server/invoice-actions";
-import { fmtD, installments, today } from "@/lib/dates";
+import { fmtD, installments, today, type Inst } from "@/lib/dates";
 
-type Order = { id: string; number: number; client: string; total: number; days: number[]; term: string; method: string; items: { itemId: string; name: string; unit: string; qty: number; bal: Record<string, number> }[] };
+type Order = { id: string; number: number; client: string; total: number; days: number[]; term: string; method: string; manual: Inst[] | null; items: { itemId: string; name: string; unit: string; qty: number; bal: Record<string, number> }[] };
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const q = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 3 });
 
@@ -21,7 +21,7 @@ export function InvoiceForm({ orders, selected, nextNumber, locations, defaultLo
   const [notes, setNotes] = useState("");
   const { run, pending } = useRun();
   const o = orders.find((x) => x.id === orderId);
-  const parc = useMemo(() => (o ? installments(o.total, o.days, date || today()) : []), [o, date]);
+  const parc = useMemo(() => (o ? o.manual ?? installments(o.total, o.days, date || today()) : []), [o, date]);
   const short = o && stockOut ? o.items.filter((i) => (i.bal[loc] ?? 0) + 1e-9 < i.qty) : [];
   return (
     <div className="sheet" style={{ maxWidth: 900 }}>

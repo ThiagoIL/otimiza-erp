@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { Icon } from "./Icon";
 import { ActionButton, Modal, useRun } from "./client";
 import { ItemPicker } from "./ItemPicker";
+import { PickField } from "./SearchPicker";
+import { searchPartnersAction } from "@/server/search-actions";
 import { toast } from "./Toast";
 import {
   addComponentsAction, createAssemblyFromOpAction, generateOpsAction, moveOpAction, noProductionAction, removeComponentAction, reportOutputAction,
@@ -102,7 +104,7 @@ export function OpBoard({ stages, ops, canEdit }: { stages: StageCol[]; ops: OpC
 }
 
 // ------------------------------------------------------------------ Cabeçalho da OP (dados principais)
-export type OpForm = { id?: string; itemId: string; itemLabel: string; qty: number; salesOrderId: string; partnerId: string; workCenterId: string; responsibleId: string; priority: string; startDate: string; needDate: string; notes: string; stageId?: string };
+export type OpForm = { id?: string; itemId: string; itemLabel: string; qty: number; salesOrderId: string; partnerId: string; partnerLabel?: string; workCenterId: string; responsibleId: string; priority: string; startDate: string; needDate: string; notes: string; stageId?: string };
 export function OpHeader({ op, orders, clients, centers, team, stages, canEdit }: { op: OpForm; orders: Opt[]; clients: Opt[]; centers: Opt[]; team: Opt[]; stages?: Opt[]; canEdit: boolean }) {
   const [d, setD] = useState(op);
   const [pick, setPick] = useState(false);
@@ -121,7 +123,10 @@ export function OpHeader({ op, orders, clients, centers, team, stages, canEdit }
         <div className="fld"><label htmlFor="op_q">Quantidade <span className="req">*</span></label><input id="op_q" type="number" min={0} step="any" value={d.qty} disabled={ro} onChange={(e) => set({ qty: Number(e.target.value) || 0 })} /></div>
         <div className="fld"><label htmlFor="op_p">Prioridade</label><select id="op_p" value={d.priority} disabled={ro} onChange={(e) => set({ priority: e.target.value })}>{Object.keys(PRIORITIES).map((p) => <option key={p}>{p}</option>)}</select></div>
         <div className="fld span2"><label htmlFor="op_o">Pedido de venda</label><select id="op_o" value={d.salesOrderId} disabled={ro} onChange={(e) => set({ salesOrderId: e.target.value })}><option value="">Sem pedido (produção para estoque)</option>{orders.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        <div className="fld span2"><label htmlFor="op_c">Cliente</label><select id="op_c" value={d.partnerId} disabled={ro || !!d.salesOrderId} onChange={(e) => set({ partnerId: e.target.value })}><option value="">{d.salesOrderId ? "O do pedido" : "Nenhum"}</option>{clients.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <PickField id="op_c" className="fld span2" label="Cliente" disabled={ro || !!d.salesOrderId} emptyText={d.salesOrderId ? "O do pedido" : "Nenhum (produção para estoque)"}
+          value={d.partnerId ? { id: d.partnerId, label: clients.find(([v]) => v === d.partnerId)?.[1] ?? d.partnerLabel ?? "" } : null}
+          onChange={(r) => set({ partnerId: r?.id ?? "", partnerLabel: r?.label ?? "" })}
+          picker={{ title: "Pesquisar cliente", fetcher: searchPartnersAction, filter: "Cliente", lockFilter: true, placeholder: "Nome, fantasia, CNPJ/CPF ou cidade", columns: ["Nome", "Razão social", "CNPJ/CPF", "Cidade", "Telefone"] }} />
         {stages && !op.id && <div className="fld"><label htmlFor="op_s">Etapa inicial</label><select id="op_s" value={d.stageId ?? ""} onChange={(e) => set({ stageId: e.target.value })}>{stages.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
         <div className="fld"><label htmlFor="op_wc">Centro de trabalho</label><select id="op_wc" value={d.workCenterId} disabled={ro} onChange={(e) => set({ workCenterId: e.target.value })}><option value="">Nenhum</option>{centers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
         <div className="fld"><label htmlFor="op_r">Responsável</label><select id="op_r" value={d.responsibleId} disabled={ro} onChange={(e) => set({ responsibleId: e.target.value })}><option value="">Nenhum</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
@@ -134,7 +139,7 @@ export function OpHeader({ op, orders, clients, centers, team, stages, canEdit }
           id: d.id, itemId: d.itemId, qty: d.qty, salesOrderId: d.salesOrderId || null, partnerId: d.partnerId || null, workCenterId: d.workCenterId || null, responsibleId: d.responsibleId || null,
           priority: d.priority as "Normal", startDate: d.startDate || null, needDate: d.needDate || null, notes: d.notes, stageId: d.stageId || null }), () => setDirty(false))}>{pending ? "Salvando…" : d.id ? "Salvar dados da OP" : "Criar OP"}</button>
       </div>}
-      {pick && <ItemPicker single title="Produto a produzir" kinds={["PRODUTO_ACABADO", "SEMIACABADO"]} priceLabel="Custo médio" priceOf={(r) => r.cost} onClose={() => setPick(false)}
+      {pick && <ItemPicker single title="Produto a produzir" priceLabel="Custo médio" priceOf={(r) => r.cost} onClose={() => setPick(false)}
         onPick={([r]) => { set({ itemId: r.id, itemLabel: `${r.name} · ${r.code}` }); setPick(false); }} />}
     </div>
   );

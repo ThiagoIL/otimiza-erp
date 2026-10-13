@@ -40,7 +40,7 @@ export async function SalesList({ searchParams }: { searchParams: Promise<SP> })
     const clients = await tx.select({ id: E.partners.id, n: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})` }).from(E.partners).where(sql`'Cliente' = any(${E.partners.kinds})`).orderBy(sql`2`);
     return { rows, total, sum, counts, clients };
   });
-  const sellers = await db.select({ id: users.id, n: users.name }).from(users).where(eq(users.tenantId, s.tenant.id)).orderBy(asc(users.name));
+  const sellers = await s.tx((tx) => tx.select({ id: E.salespeople.id, n: E.salespeople.name }).from(E.salespeople).orderBy(asc(E.salespeople.name)));
   const cnt = (st: string) => (st ? d.counts.find((c) => c.st === st)?.n ?? 0 : d.counts.reduce((a, c) => a + c.n, 0));
   const moreActive = ["vend", "local", "item", "prod"].filter((k) => sp[k]).length;
   const hoje = today();
@@ -50,7 +50,8 @@ export async function SalesList({ searchParams }: { searchParams: Promise<SP> })
       <PageHead title="Pedidos de venda" sub="Propostas e pedidos com itens, descontos, prazos e condições de pagamento. Ao aprovar, o pedido vai para a fila da produção, que decide se gera ordem de produção."
         actions={<><a className="btn" href={csv}><Icon name="download" size={16} /> Exportar CSV</a>{s.edit && <BtnLink href="/pedidos/novo" primary icon="plus">Nova proposta</BtnLink>}</>} />
       <FilterBar moreActive={moreActive} right={<span className="count">{d.total} pedidos · {fmtMoney(d.sum)}</span>}
-        tabs={<FilterTabs name="st" value={sp.st ?? ""} options={[{ v: "", label: "Todos", n: cnt("") }, ...Object.entries(SO_STATUS).map(([v, x]) => ({ v, label: x.label === "Proposta" ? "Propostas" : x.label === "Aprovado" ? "Aprovados" : x.label === "Faturado" ? "Faturados" : "Cancelados", n: cnt(v) }))]} />}
+        tabs={<FilterTabs name="st" value={sp.st ?? ""} options={[{ v: "", label: "Em aberto", n: cnt("PROPOSTA") + cnt("APROVADO") }, { v: "PROPOSTA", label: "Propostas", n: cnt("PROPOSTA") }, { v: "APROVADO", label: "Aprovados", n: cnt("APROVADO") },
+          { v: "FATURADO", label: "Faturados", n: cnt("FATURADO") }, { v: "CANCELADO", label: "Cancelados", n: cnt("CANCELADO") }, { v: "todos", label: "Todos", n: cnt("") }]} />}
         more={<>
           <select name="vend" defaultValue={sp.vend ?? ""} aria-label="Vendedor"><option value="">Todos os vendedores</option>{sellers.map((u) => <option key={u.id} value={u.id}>{u.n}</option>)}</select>
           <label className="fl">Local de entrega <input type="text" name="local" defaultValue={sp.local ?? ""} /></label>
@@ -92,17 +93,23 @@ export async function SalesList({ searchParams }: { searchParams: Promise<SP> })
   );
 }
 
+/** Cliente escolhido ao abrir uma proposta nova a partir do cadastro do cliente. */
+async function partnerRef(s: PageCtx, id: string) {
+  const [p] = await s.tx((tx) => tx.select().from(E.partners).where(eq(E.partners.id, id)).limit(1));
+  if (!p) return null;
+  const place = [p.street && `${p.street}${p.number ? ", " + p.number : ""}`, p.city && `${p.city}/${p.uf ?? ""}`].filter(Boolean).join(" · ");
+  return { id: p.id, label: p.tradeName || p.name, place, salespersonId: p.salespersonId ?? "" };
+}
+
 async function editorOptions(s: PageCtx) {
   const o = await s.tx(async (tx) => ({
-    partners: await tx.select({ id: E.partners.id, name: E.partners.name, trade: E.partners.tradeName, city: E.partners.city, uf: E.partners.uf, street: E.partners.street, number: E.partners.number })
-      .from(E.partners).where(sql`'Cliente' = any(${E.partners.kinds}) and ${E.partners.active}`).orderBy(asc(E.partners.name)),
     methods: await tx.select({ id: E.paymentMethods.id, n: E.paymentMethods.name }).from(E.paymentMethods).where(eq(E.paymentMethods.active, true)).orderBy(asc(E.paymentMethods.name)),
     terms: await tx.select({ id: E.paymentTerms.id, name: E.paymentTerms.name, days: E.paymentTerms.days }).from(E.paymentTerms).where(eq(E.paymentTerms.active, true)).orderBy(asc(E.paymentTerms.name)),
     fields: await tx.select().from(E.customFields).where(and(eq(E.customFields.entity, "sales_order"), eq(E.customFields.active, true))).orderBy(asc(E.customFields.position)),
   }));
-  const sellers = await db.select({ id: users.id, n: users.name }).from(users).where(and(eq(users.tenantId, s.tenant.id), eq(users.status, "ACTIVE"))).orderBy(asc(users.name));
+  // vendedores: cadastro próprio em Comercial › Configurações › Vendedores
+  const sellers = await s.tx((tx) => tx.select({ id: E.salespeople.id, n: E.salespeople.name }).from(E.salespeople).where(eq(E.salespeople.active, true)).orderBy(asc(E.salespeople.name)));
   return {
-    partners: o.partners.map((p) => ({ id: p.id, label: p.trade ? `${p.trade} · ${p.name}` : p.name, place: [p.street && `${p.street}${p.number ? ", " + p.number : ""}`, p.city && `${p.city}/${p.uf ?? ""}`].filter(Boolean).join(" · ") })),
     sellers: sellers.map((u) => [u.id, u.n] as [string, string]),
     methods: o.methods.map((m) => [m.id, m.n] as [string, string]),
     terms: o.terms,
@@ -114,9 +121,9 @@ export async function SalesNew({ searchParams }: { searchParams: Promise<SP> }) 
   const s = await page("comercial", { edit: true });
   const sp = await searchParams;
   const o = await editorOptions(s);
-  const cli = o.partners.find((p) => p.id === sp.cliente);
+  const cli = sp.cliente ? await partnerRef(s, sp.cliente) : null;
   const data: SOData = {
-    status: "PROPOSTA", productionStatus: null, partnerId: cli?.id ?? "", salespersonId: s.user.id, issueDate: today(), deliveryDate: "", deliveryPlace: cli?.place ?? "",
+    status: "PROPOSTA", productionStatus: null, partnerId: cli?.id ?? "", partnerLabel: cli?.label ?? "", salespersonId: cli?.salespersonId ?? "", issueDate: today(), deliveryDate: "", deliveryPlace: cli?.place ?? "",
     paymentMethodId: o.methods.find(([, n]) => n === "Boleto")?.[0] ?? "", paymentTermId: "", installments: [], discount: 0, freight: 0, notes: "", internalNotes: "", custom: {}, lines: [],
   };
   return (
@@ -143,10 +150,10 @@ export async function SalesEdit({ params }: { params: Promise<{ id: string }> })
   });
   if (!d) notFound();
   const { so } = d;
-  // cliente inativo continua aparecendo no pedido antigo
-  const partners = o.partners.some((x) => x.id === so.partnerId) ? o.partners : [{ id: d.p.id, label: d.p.trade ?? d.p.name, place: "" }, ...o.partners];
+  // vendedor antigo (ou inativo) continua aparecendo no pedido
+  if (so.salespersonId && !o.sellers.some(([v]) => v === so.salespersonId)) o.sellers.unshift([so.salespersonId, so.salespersonName ?? "Vendedor"]);
   const data: SOData = {
-    id: so.id, number: so.number, status: so.status, productionStatus: so.productionStatus, partnerId: so.partnerId, salespersonId: so.salespersonId ?? "",
+    id: so.id, number: so.number, status: so.status, productionStatus: so.productionStatus, partnerId: so.partnerId, partnerLabel: d.p ? (d.p.trade || d.p.name) : "", salespersonId: so.salespersonId ?? "",
     issueDate: so.issueDate, deliveryDate: so.deliveryDate ?? "", deliveryPlace: so.deliveryPlace ?? "", paymentMethodId: so.paymentMethodId ?? "", paymentTermId: so.paymentTermId ?? "",
     installments: so.installments, discount: Number(so.discount), freight: Number(so.freight), notes: so.notes ?? "", internalNotes: so.internalNotes ?? "", custom: so.custom,
     lines: d.lines.map(({ l, i }) => ({ key: l.id, itemId: i.id, code: i.code, name: i.name, unit: i.unit, qty: Number(l.qty), price: Number(l.price), discountPct: Number(l.discountPct), notes: l.notes ?? "" })),
@@ -169,7 +176,7 @@ export async function SalesEdit({ params }: { params: Promise<{ id: string }> })
           {nfOk.map((n) => <a key={n.id} className="badge ok" href={`/faturamento/${n.id}`} style={{ textDecoration: "none" }}>NF {n.number}</a>)}
         </div>
       </PageHead>
-      <SalesOrderEditor key={so.updatedAt.toISOString()} data={data} {...o} partners={partners} locked={so.status === "FATURADO" || so.status === "CANCELADO"} canEdit={s.edit} />
+      <SalesOrderEditor key={so.updatedAt.toISOString()} data={data} {...o} locked={so.status === "FATURADO" || so.status === "CANCELADO"} canEdit={s.edit} />
       <div className="sheet" style={{ marginTop: 16 }}>
         <Attachments entity="sales_order" entityId={so.id} rows={d.files} canEdit={s.edit} />
       </div>

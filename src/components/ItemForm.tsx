@@ -5,22 +5,25 @@ import type { Item } from "@/db/erp";
 import { Field, Form, Submit, Hidden } from "./Form";
 import { saveItemAction } from "@/server/item-actions";
 import { toInput } from "@/lib/format";
+import { PickField } from "./SearchPicker";
+import { searchGroupsAction } from "@/server/search-actions";
 
 type Opt = readonly [string, string];
-export type GroupOpt = { id: string; name: string; next: string | null };
+/** grupo do item: caminho completo (Pai › Filho) e o próximo código automático do prefixo do grupo */
+export type GroupRef = { id: string; label: string; next: string | null };
 export type TypeOpt = { id: string; name: string; kind: string };
 
 const ORIGENS: Opt[] = [["0", "0 · Nacional"], ["1", "1 · Estrangeira, importação direta"], ["2", "2 · Estrangeira, mercado interno"], ["3", "3 · Nacional, conteúdo importado > 40%"], ["5", "5 · Nacional, conteúdo importado ≤ 40%"], ["8", "8 · Nacional, conteúdo importado > 70%"]];
 
 /** Cadastro do item em sessões: topo (situação, grupo, tipo, código e descrição), estoque, compras, custo e fiscal. */
-export function ItemForm({ item, groups, types, units, locations, suppliers, canEdit, extra }: {
-  item?: Item; groups: GroupOpt[]; types: TypeOpt[]; units: Opt[]; locations: Opt[]; suppliers: Opt[]; canEdit: boolean;
+export function ItemForm({ item, group, types, units, locations, suppliers, canEdit, extra }: {
+  item?: Item; group?: GroupRef | null; types: TypeOpt[]; units: Opt[]; locations: Opt[]; suppliers: Opt[]; canEdit: boolean;
   extra?: { avgCost: string; balance: string };
 }) {
-  const [groupId, setGroupId] = useState(item?.groupId ?? "");
+  const [g, setG] = useState<GroupRef | null>(group ?? null);
+  const groupId = g?.id ?? "";
   const [mode, setMode] = useState<"auto" | "manual">(item ? "manual" : "auto");
   const [active, setActive] = useState(item ? item.active : true);
-  const g = groups.find((x) => x.id === groupId);
   const autoOk = !!g?.next;
   const effMode = !item && mode === "auto" && autoOk ? "auto" : "manual";
 
@@ -37,12 +40,9 @@ export function ItemForm({ item, groups, types, units, locations, suppliers, can
           {!active && <span className="muted" style={{ fontSize: 12.5 }}>Itens inativos não aparecem na pesquisa de pedidos, compras e OPs.</span>}
         </div>
         <div className="form f4">
-          <div className="fld span2">
-            <label htmlFor="f_grupo">Grupo</label>
-            <select id="f_grupo" name="grupo" value={groupId} onChange={(e) => setGroupId(e.target.value)}>
-              <option value="">Sem grupo</option>{groups.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
-            </select>
-          </div>
+          <PickField id="f_grupo" name="grupo" label="Grupo" className="fld span2" emptyText="Sem grupo" value={g}
+            onChange={(r) => setG(r ? { id: r.id, label: r.label, next: r.data?.next || null } : null)}
+            picker={{ title: "Pesquisar grupo", fetcher: searchGroupsAction, placeholder: "Nome, código ou prefixo do grupo", columns: ["Código", "Grupo", "Prefixo", "Itens"] }} />
           <Field name="tipo" label="Tipo" required options={types.map((t) => [t.id, t.name] as const)} emptyOption="Selecione…" defaultValue={item?.typeId ?? types.find((t) => t.kind === "MATERIA_PRIMA")?.id} />
           <Field name="unidade" label="Unidade" required options={units} defaultValue={item?.unit ?? "UN"} />
           <div className="fld span2">
@@ -56,7 +56,7 @@ export function ItemForm({ item, groups, types, units, locations, suppliers, can
             {effMode === "auto"
               ? <><input id="f_codigo" value={g!.next!} disabled readOnly /><small>Próximo código livre do prefixo do grupo. Ele é confirmado ao salvar.</small></>
               : <><input id="f_codigo" name="codigo" defaultValue={item?.code ?? ""} maxLength={40} autoComplete="off" />
-                {!item && mode === "auto" && <small>{groupId ? "Este grupo não tem prefixo de código. Digite o código ou ligue um prefixo ao grupo em Itens › Grupos." : "Escolha o grupo para gerar o código automático."}</small>}</>}
+                {!item && mode === "auto" && <small>{groupId ? "Este grupo não tem prefixo de código. Digite o código ou informe o prefixo no cadastro do grupo (Itens › Grupos)." : "Escolha o grupo para gerar o código automático."}</small>}</>}
           </div>
           <Field name="descricao" label="Descrição" required full defaultValue={item?.name} maxLength={200} />
           <Field name="complemento" label="Descrição complementar" full defaultValue={item?.complement} maxLength={200} hint="Marca, especificação ou detalhe que ajuda a encontrar o item." />
