@@ -301,10 +301,11 @@ div.kpi:hover{background:none}
 .al-i.bad{background:var(--bad-soft);color:var(--bad)}.al-i.warn{background:var(--warn-soft);color:var(--warn)}.al-i.ok{background:var(--ok-soft);color:var(--ok)}
 .al-more{padding:10px 16px;font-size:12.5px}
 .flow{overflow-x:auto;padding:0}
-/* fluxo compacto: não cresce além de ~900 px, para a página inicial caber sem precisar diminuir o zoom */
-.flow svg{display:block;min-width:680px;width:100%;max-width:900px;height:auto;margin:0 auto}
-.fl-lane{font:700 13px "Ubuntu",system-ui,sans-serif}
-.fl-n{font:600 12.5px "Ubuntu",system-ui,sans-serif;fill:#fff;pointer-events:none}
+/* fluxo: ocupa a largura do painel até ~1180 px (raias por área, caixas maiores); em telas largas as faixas
+   das raias continuam pelo fundo do .flow (gradiente montado em home.tsx) */
+.flow svg{display:block;min-width:760px;width:100%;max-width:1180px;height:auto;margin:0}
+.fl-lane{font:700 15px "Ubuntu",system-ui,sans-serif}
+.fl-n{font:600 14.5px "Ubuntu",system-ui,sans-serif;fill:#fff;pointer-events:none}
 .fl-s{font:600 12px "Ubuntu",system-ui,sans-serif}
 .fl-t{font:500 10.5px "Ubuntu",system-ui,sans-serif;fill:var(--muted)}
 .flow-legend i.solid{background:var(--ink-2)}

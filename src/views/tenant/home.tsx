@@ -9,42 +9,45 @@ import type { ModuleKey } from "@/lib/modules";
 
 // ------------------------------------------------------------------ Fluxo do sistema
 const LANES: [string, string][] = [["Comercial", "#1E3A5F"], ["Produção", "#C94D0B"], ["Itens e estoque", "#2B6A8F"], ["Compras", "#4F5D73"], ["Financeiro", "#2E7D4F"]];
+// [raia, coluna, nome, endereço, módulo]
 const NODES: [number, number, string, string, ModuleKey | null][] = [
-  [0, 1, "Clientes", "/clientes", "comercial"], [0, 2, "Pedidos de venda", "/pedidos", "comercial"], [0, 5, "Faturamento", "/faturamento", "comercial"],
-  [1, 2, "Pedidos a produzir", "/producao/pedidos", "producao"], [1, 3, "Ordens de produção", "/ops", "producao"], [1, 4, "Montagens", "/montagens", "producao"],
-  [2, 2, "Itens", "/itens", "itens"], [2, 3, "Estoque", "/estoque", "estoque"], [2, 4, "Inventário", "/estoque/inventarios", "estoque"],
-  [3, 2, "Solicitação", "/compras/solicitacoes", "compras"], [3, 3, "Cotação", "/compras/cotacoes", "compras"], [3, 4, "Pedido de compra", "/compras/pedidos", "compras"], [3, 5, "Recebimento", "/compras/pedidos?st=ENVIADO", "compras"],
-  [4, 3, "Contas a pagar", "/financeiro/pagar", "financeiro"], [4, 4, "Fluxo de caixa", "/financeiro/fluxo", "financeiro"], [4, 5, "Contas a receber", "/financeiro/receber", "financeiro"],
+  [0, 0, "Clientes", "/clientes", "comercial"], [0, 1, "Pedidos de venda", "/pedidos", "comercial"], [0, 3, "Faturamento", "/faturamento", "comercial"],
+  [1, 1, "Pedidos a produzir", "/producao/pedidos", "producao"], [1, 2, "Ordens de produção", "/ops", "producao"], [1, 3, "Montagens", "/montagens", "producao"],
+  [2, 1, "Itens", "/itens", "itens"], [2, 2, "Estoque", "/estoque", "estoque"],
+  [3, 1, "Solicitação de compra", "/compras/solicitacoes", "compras"], [3, 2, "Pedido de compra", "/compras/pedidos", "compras"],
+  [4, 1, "Contas a pagar", "/financeiro/pagar", "financeiro"], [4, 2, "Fluxo de caixa", "/financeiro/fluxo", "financeiro"], [4, 3, "Contas a receber", "/financeiro/receber", "financeiro"],
 ];
+/** Fluxo entre os módulos: raias por área, caixas clicáveis e setas mostrando o caminho do pedido e das compras. */
 function FlowSvg({ can }: { can: (m: ModuleKey) => boolean }) {
-  const X = (c: number) => 126 + c * 156, CX = (c: number) => X(c) + 70, R = (c: number) => X(c) + 140, NT = (l: number) => l * 80 + 18, NB = (l: number) => l * 80 + 62, CY = (l: number) => l * 80 + 40;
-  const gap = (l: number) => NB(l) + 9; // corredor entre a raia l e a l+1
-  const A = (l: number, d: string, both = false, dash = false) => <path d={d} fill="none" stroke={LANES[l][1]} strokeWidth={1.8} markerEnd={`url(#fa${l})`} markerStart={both ? `url(#fa${l})` : undefined} strokeDasharray={dash ? "5 4" : undefined} />;
+  const W = 1180, LH = 96, NW = 200, NH = 52;
+  const X = (c: number) => 200 + c * 250, CX = (c: number) => X(c) + NW / 2, R = (c: number) => X(c) + NW;
+  const NT = (l: number) => l * LH + 22, NB = (l: number) => NT(l) + NH, CY = (l: number) => NT(l) + NH / 2;
+  const mid = (l: number) => (l + 1) * LH + 11; // corredor entre a raia l e a de baixo
+  const A = (l: number, d: string, both = false) => <path d={d} fill="none" stroke={LANES[l][1]} strokeWidth={2} markerEnd={`url(#fa${l})`} markerStart={both ? `url(#fa${l})` : undefined} />;
   return (
-    <div className="flow">
-      <svg viewBox="0 0 1070 400" role="img" aria-label="Fluxo entre os módulos do sistema">
+    <div className="flow" style={{ background: `linear-gradient(${LANES.map(([, c], l) => `color-mix(in srgb, ${c} ${l % 2 ? 5 : 9}%, var(--surface)) ${l * LH}px ${(l + 1) * LH}px`).join(", ")})` }}>
+      <svg viewBox={`0 0 ${W} ${LANES.length * LH}`} role="img" aria-label="Fluxo entre os módulos do sistema">
         <defs>{LANES.map(([, c], l) => <marker key={l} id={`fa${l}`} viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill={c} /></marker>)}</defs>
-        {LANES.map(([n, c], l) => <g key={n}><rect x={0} y={l * 80} width={1070} height={80} fill={c} fillOpacity={l % 2 ? 0.05 : 0.09} /><rect x={0} y={l * 80} width={4} height={80} fill={c} /><text x={16} y={l * 80 + 44} className="fl-lane" fill={c}>{n}</text></g>)}
-        {/* comercial */}
-        {A(0, `M${R(1)} ${CY(0)}H${X(2) - 3}`)}
-        {A(0, `M${R(2)} ${CY(0)}H${X(5) - 3}`, false, true)}
-        {A(0, `M${CX(2)} ${NB(0)}V${NT(1) - 3}`)}
-        {/* produção */}
-        {A(1, `M${R(2)} ${CY(1)}H${X(3) - 3}`)}{A(1, `M${R(3)} ${CY(1)}H${X(4) - 3}`)}
-        {A(1, `M${R(4)} ${CY(1)}H${CX(5)}V${NB(0) + 3}`)}
-        {/* estoque */}
-        {A(2, `M${R(2)} ${CY(2)}H${X(3) - 3}`)}{A(2, `M${CX(3)} ${NT(2) - 3}V${NB(1) + 3}`, true)}{A(2, `M${X(4)} ${CY(2)}H${R(3) + 3}`, true)}
-        {A(2, `M${CX(3)} ${NB(2)}V${gap(2)}H${CX(2)}V${NT(3) - 3}`)}
-        {/* compras */}
-        {A(3, `M${R(2)} ${CY(3)}H${X(3) - 3}`)}{A(3, `M${R(3)} ${CY(3)}H${X(4) - 3}`)}{A(3, `M${R(4)} ${CY(3)}H${X(5) - 3}`)}
-        {A(3, `M${CX(5)} ${NT(3)}V${gap(1) + 40}H${R(4) + 8}V${CY(2)}H${R(4) + 3}`)}
-        {A(3, `M${CX(5)} ${NB(3)}V${gap(3)}H${CX(3)}V${NT(4) - 3}`)}
-        {/* financeiro */}
-        {A(4, `M${R(3)} ${CY(4)}H${X(4) - 3}`)}{A(4, `M${X(5)} ${CY(4)}H${R(4) + 3}`)}
-        {A(0, `M${R(5)} ${CY(0)}H${R(5) + 14}V${CY(4)}H${R(5) + 3}`)}
+        {LANES.map(([n, c], l) => <g key={n}><rect x={0} y={l * LH} width={W} height={LH} style={{ fill: `color-mix(in srgb, ${c} ${l % 2 ? 5 : 9}%, var(--surface))` }} /><rect x={0} y={l * LH} width={5} height={LH} fill={c} /><text x={22} y={CY(l) + 5} className="fl-lane" fill={c}>{n}</text></g>)}
+        {/* comercial: cliente → pedido → (faturamento quando sai) */}
+        {A(0, `M${R(0)} ${CY(0)}H${X(1) - 3}`)}
+        {A(0, `M${R(1)} ${CY(0)}H${X(3) - 3}`)}
+        {A(0, `M${CX(1)} ${NB(0)}V${NT(1) - 3}`)}
+        {/* produção: fila → OP → montagem → faturamento */}
+        {A(1, `M${R(1)} ${CY(1)}H${X(2) - 3}`)}{A(1, `M${R(2)} ${CY(1)}H${X(3) - 3}`)}
+        {A(1, `M${CX(3)} ${NT(1)}V${NB(0) + 3}`)}
+        {/* estoque: itens → estoque; OP retira e devolve produção ao estoque */}
+        {A(2, `M${R(1)} ${CY(2)}H${X(2) - 3}`)}{A(2, `M${CX(2)} ${NB(1) + 3}V${NT(2) - 3}`, true)}
+        {A(2, `M${CX(2) - 40} ${NB(2)}V${mid(2)}H${CX(1)}V${NT(3) - 3}`)}
+        {/* compras: solicitação → pedido de compra → entra no estoque e gera contas a pagar */}
+        {A(3, `M${R(1)} ${CY(3)}H${X(2) - 3}`)}{A(3, `M${CX(2) + 40} ${NT(3)}V${NB(2) + 3}`)}
+        {A(3, `M${CX(2)} ${NB(3)}V${mid(3)}H${CX(1)}V${NT(4) - 3}`)}
+        {/* financeiro: pagar e receber alimentam o fluxo de caixa */}
+        {A(4, `M${R(1)} ${CY(4)}H${X(2) - 3}`)}{A(4, `M${X(3)} ${CY(4)}H${R(2) + 3}`)}
+        {A(0, `M${R(3)} ${CY(0)}H${R(3) + 18}V${CY(4)}H${R(3) + 3}`)}
         {NODES.map(([l, c, t, href, mod]) => {
           const ok = !mod || can(mod);
-          const body = <><rect x={X(c)} y={NT(l)} width={140} height={44} rx={8} fill={LANES[l][1]} fillOpacity={ok ? 1 : 0.35} /><text x={X(c) + 70} y={NT(l) + 27} textAnchor="middle" className="fl-n">{t}</text></>;
+          const body = <><rect x={X(c)} y={NT(l)} width={NW} height={NH} rx={10} fill={LANES[l][1]} fillOpacity={ok ? 1 : 0.35} /><text x={CX(c)} y={CY(l) + 5} textAnchor="middle" className="fl-n">{t}</text></>;
           return ok ? <a key={t} href={href} className="node" aria-label={`Abrir ${t}`}>{body}</a> : <g key={t}>{body}</g>;
         })}
       </svg>

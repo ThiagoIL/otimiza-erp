@@ -84,6 +84,8 @@ abrir `http://demo.localhost:3000`.
   - Pedidos e OPs mostram **só os em aberto por padrão**; faturados, concluídos e cancelados aparecem quando escolhidos.
   - Pedido: condição **"Manual"** para lançar as parcelas uma a uma; o faturamento mantém essas parcelas.
   - OP manual aceita **qualquer item** (produção para estoque). Início sem a faixa de indicadores e com o fluxo compacto.
+- Fluxo do Início (out/2026): raias por área, caixas maiores e todas as setas contínuas; sem Inventário, Cotação e
+  Recebimento (compras: solicitação → pedido de compra → estoque e contas a pagar).
 
 ## Próximos passos sugeridos
 - Emissão real de NF-e (provedor) quando for necessário.
