@@ -1,4 +1,3 @@
-import { Suspense } from "react";
 import { redirect } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { adminSession, currentTenant, requestArea, tenantSession } from "@/lib/context";
@@ -18,11 +17,9 @@ export default async function SistemaLayout({ children }: { children: React.Reac
     const s = await adminSession();
     if (!s) redirect("/login");
     return (
-      <Suspense>
         <Shell nav={ADMIN_NAV} user={s.user} roleLabel={s.user.isMaster ? "Administrador do sistema · master" : "Administrador do sistema"}>
           {children}
         </Shell>
-      </Suspense>
     );
   }
 
@@ -36,12 +33,10 @@ export default async function SistemaLayout({ children }: { children: React.Reac
     const nav = access.pointer ? POINTER_NAV : TENANT_NAV.filter((m) => !m.perm || (m.perm === "admin" ? access.isAdmin : access.mods[m.perm] !== "nenhum"));
     const readOnly = Object.entries(access.mods).filter(([, l]) => l === "ver").map(([k]) => k);
     return (
-      <Suspense>
         <Shell nav={nav} context={t.name} logo={await logoUrl(t.id)} user={s.user} readOnly={readOnly} bell
           roleLabel={access.profileName && !access.isAdmin ? access.profileName : ROLE_LABEL[s.user.role]}>
           {children}
         </Shell>
-      </Suspense>
     );
   }
 

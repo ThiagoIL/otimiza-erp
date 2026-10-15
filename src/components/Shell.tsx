@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type ReactNode } from "react";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { LogoLockup } from "./Logo";
 import { Icon } from "./Icon";
 import { Toaster, Flash } from "./Toast";
@@ -113,7 +113,8 @@ export function Shell({ nav, context, logo, user, roleLabel, readOnly, bell, chi
       </div>
       <ColumnMenu />
       <Toaster />
-      <Flash />
+      {/* Flash lê ?msg= da URL (useSearchParams): fica num Suspense só dele, sem envolver a página */}
+      <Suspense fallback={null}><Flash /></Suspense>
     </div>
   );
 }
