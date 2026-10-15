@@ -14,6 +14,29 @@ export function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
 }
 
+/**
+ * Logo da empresa no menu. O fundo do quadro pega a cor do canto da imagem, então uma logo
+ * com fundo próprio (cinza, colorido) fica emendada no quadro em vez de parecer uma figura pequena no meio.
+ */
+function CtxLogo({ src }: { src: string }) {
+  const [bg, setBg] = useState<string | undefined>();
+  return (
+    <span className="ctx-logo" style={bg ? { background: bg } : undefined}>
+      <img src={src} alt="" onLoad={(e) => {
+        try {
+          const img = e.currentTarget, c = document.createElement("canvas");
+          c.width = c.height = 1;
+          const ctx = c.getContext("2d");
+          if (!ctx) return;
+          ctx.drawImage(img, 0, 0, 1, 1, 0, 0, 1, 1); // pixel do canto superior esquerdo
+          const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+          setBg(a > 200 ? `rgb(${r},${g},${b})` : undefined);
+        } catch { /* mantém o fundo branco */ }
+      }} />
+    </span>
+  );
+}
+
 /** Moldura do sistema: menu lateral por módulo (como no protótipo), barra superior e avisos. */
 export function Shell({ nav, context, logo, user, roleLabel, readOnly, bell, children }: {
   nav: NavModule[]; context?: string; /** endereço da logo da empresa */ logo?: string | null; user: { name: string; email: string }; roleLabel: string;
@@ -34,7 +57,7 @@ export function Shell({ nav, context, logo, user, roleLabel, readOnly, bell, chi
     <div className={`app${open ? " open" : ""}`}>
       <aside className="rail" aria-label="Menu principal">
         <div className="brand"><Link href="/" aria-label="Início"><LogoLockup height={18} dark /></Link></div>
-        {context && <div className={`ctx${logo ? " has-logo" : ""}`}>{logo && <span className="ctx-logo"><img src={logo} alt="" /></span>}<span>Empresa</span><b>{context}</b></div>}
+        {context && <div className={`ctx${logo ? " has-logo" : ""}`}>{logo && <CtxLogo src={logo} />}<span>Empresa</span><b>{context}</b></div>}
         <nav className="nav">
           {nav.map((m) => {
             const active = cur?.mod.id === m.id;
