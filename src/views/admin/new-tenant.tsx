@@ -14,6 +14,9 @@ export async function AdminNewTenant() {
             <Field name="nome" label="Nome da empresa" required full />
             <Field name="slug" label="Subdomínio" required placeholder="msuassuna" hint={`Endereço de acesso: subdominio.${process.env.ROOT_DOMAIN}. Letras minúsculas, números e hífen.`} />
             <Field name="documento" label="CNPJ" placeholder="00.000.000/0000-00" />
+            <div className="full"><h2 style={{ margin: "8px 0 0" }}>Plano de usuários</h2></div>
+            <Field name="max_usuarios" label="Usuários cadastrados (máximo)" type="number" placeholder="Sem limite" hint="Vazio = sem limite. Conta o administrador." />
+            <Field name="max_simultaneos" label="Usuários simultâneos (máximo)" type="number" placeholder="Sem limite" hint="Conectados ao mesmo tempo. Vazio = sem limite." />
             <div className="full"><h2 style={{ margin: "8px 0 0" }}>Primeiro administrador da empresa</h2></div>
             <Field name="admin_nome" label="Nome" required />
             <Field name="admin_email" label="E-mail" type="email" required />

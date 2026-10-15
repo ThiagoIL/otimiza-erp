@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { and, asc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { db } from "@/lib/db";
-import { tenants, users } from "@/db/schema";
+import { tenants } from "@/db/schema";
 import { requireAdmin } from "@/lib/context";
 import { fmtDate, tenantUrl } from "@/lib/format";
+import { env } from "@/lib/env";
 
 export async function AdminTenants({ searchParams }: { searchParams: Promise<{ q?: string; situacao?: string }> }) {
   await requireAdmin();
@@ -12,7 +13,9 @@ export async function AdminTenants({ searchParams }: { searchParams: Promise<{ q
   const conds: SQL[] = [];
   if (q) conds.push(or(ilike(tenants.name, `%${q}%`), ilike(tenants.slug, `%${q}%`), ilike(tenants.document, `%${q}%`))!);
   if (sp.situacao === "ACTIVE" || sp.situacao === "SUSPENDED") conds.push(eq(tenants.status, sp.situacao));
-  const rows = await db.select({ t: tenants, n: sql<number>`(select count(*)::int from ${users} where ${users.tenantId} = ${tenants.id})` })
+  const idle = env.SESSION_IDLE_MINUTES;
+  const rows = await db.select({ t: tenants, n: sql<number>`(select count(*)::int from users u where u.tenant_id = "tenants"."id" and u.status = 'ACTIVE')`,
+    on: sql<number>`(select count(distinct s.user_id)::int from sessions s where s.tenant_id = "tenants"."id" and s.area = 'TENANT' and s.expires_at > now() and s.last_seen_at > now() - make_interval(mins => ${idle}))` })
     .from(tenants).where(conds.length ? and(...conds) : undefined).orderBy(asc(tenants.name)).limit(500);
   return (
     <>
@@ -27,12 +30,14 @@ export async function AdminTenants({ searchParams }: { searchParams: Promise<{ q
       </form>
       <div className="tbl">
         {rows.length ? (
-          <table><thead><tr><th>Empresa</th><th>Endereço de acesso</th><th>CNPJ</th><th className="num">Usuários</th><th>Situação</th><th>Criada em</th></tr></thead>
-            <tbody>{rows.map(({ t, n }) => (
+          <table><thead><tr><th>Empresa</th><th>Endereço de acesso</th><th>CNPJ</th><th className="num">Usuários</th><th className="num">Conectados</th><th>Situação</th><th>Criada em</th></tr></thead>
+            <tbody>{rows.map(({ t, n, on }) => (
               <tr key={t.id}>
                 <td><Link className="row-link" href={`/empresas/${t.id}`}>{t.name}</Link></td>
                 <td><a href={tenantUrl(t.slug)} target="_blank" rel="noopener noreferrer">{t.slug}.{process.env.ROOT_DOMAIN}</a></td>
-                <td>{t.document || "—"}</td><td className="num">{n}</td>
+                <td>{t.document || "—"}</td>
+                <td className={`num${t.maxUsers != null && n >= t.maxUsers ? " t-bad" : ""}`}>{n}{t.maxUsers != null && <span className="muted"> / {t.maxUsers}</span>}</td>
+                <td className={`num${t.maxSessions != null && on >= t.maxSessions ? " t-bad" : ""}`}>{on}{t.maxSessions != null && <span className="muted"> / {t.maxSessions}</span>}</td>
                 <td>{t.status === "ACTIVE" ? <span className="badge ok">Ativa</span> : <span className="badge bad">Suspensa</span>}</td>
                 <td>{fmtDate(t.createdAt)}</td>
               </tr>))}</tbody></table>

@@ -32,6 +32,10 @@ export const tenants = pgTable("tenants", {
   document: text("document"), // CNPJ
   status: tenantStatusEnum("status").notNull().default("ACTIVE"),
   notes: text("notes"),
+  /** plano: máximo de usuários ativos cadastrados (nulo = sem limite) */
+  maxUsers: integer("max_users"),
+  /** plano: máximo de usuários conectados ao mesmo tempo (nulo = sem limite) */
+  maxSessions: integer("max_sessions"),
   createdAt: ts("created_at").notNull().defaultNow(),
   updatedAt: ts("updated_at").notNull().defaultNow().$onUpdate(() => new Date()),
 });

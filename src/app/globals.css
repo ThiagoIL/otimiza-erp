@@ -766,3 +766,11 @@ select.sup-fab,select.sup-est{height:32px;font-size:13px;min-width:160px}
 .qty-big .btn{height:44px;width:44px;font-size:20px;padding:0;flex:none}
 .pt-acts{display:flex;gap:8px;justify-content:flex-end;margin-top:14px}
 .btn.big{height:46px;padding:0 22px;font-size:15px}
+
+/* ---------- Plano de usuários (limites por empresa) ---------- */
+.plan{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px}
+.plan-b{display:flex;flex-direction:column;gap:6px}
+.plan-t{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.plan-t span{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums}
+.plan .prog{height:8px;flex:none}
+.plan .prog.full i{background:var(--bad)}

@@ -9,6 +9,8 @@ import { UserTable } from "@/components/UserTable";
 import { updateTenantAction } from "@/server/admin-actions";
 import { createUserAction } from "@/server/user-actions";
 import { fmtDateTime, tenantUrl } from "@/lib/format";
+import { onlineSessions, usageOf } from "@/lib/limits";
+import { OnlineTable, PlanBars } from "@/components/PlanUsage";
 
 export async function AdminTenant({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
@@ -16,6 +18,7 @@ export async function AdminTenant({ params }: { params: Promise<{ id: string }> 
   const [t] = await db.select().from(tenants).where(eq(tenants.id, id)).limit(1);
   if (!t) notFound();
   const us = await db.select().from(users).where(eq(users.tenantId, t.id)).orderBy(asc(users.name));
+  const [usage, online] = await Promise.all([usageOf(t.id), onlineSessions(t.id)]);
   return (
     <>
       <div className="ph"><div><Link className="back" href="/empresas">‹ Empresas</Link><h1>{t.name}</h1>
@@ -28,6 +31,9 @@ export async function AdminTenant({ params }: { params: Promise<{ id: string }> 
             <div className="fld"><label htmlFor="f_slug_ro">Subdomínio</label><input id="f_slug_ro" value={t.slug} disabled readOnly /><small>Não muda depois de criado.</small></div>
             <Field name="documento" label="CNPJ" defaultValue={t.document} />
             <Field name="situacao" label="Situação" options={[["ACTIVE", "Ativa"], ["SUSPENDED", "Suspensa (bloqueia o acesso)"]]} defaultValue={t.status} full />
+            <div className="full"><h3 className="sec" style={{ margin: "6px 0 0" }}>Plano de usuários</h3></div>
+            <Field name="max_usuarios" label="Usuários cadastrados (máximo)" type="number" defaultValue={t.maxUsers} placeholder="Sem limite" hint="Usuários ativos. Vazio = sem limite." />
+            <Field name="max_simultaneos" label="Usuários simultâneos (máximo)" type="number" defaultValue={t.maxSessions} placeholder="Sem limite" hint="Conectados ao mesmo tempo. Vazio = sem limite." />
             <Field name="observacoes" label="Observações internas" type="textarea" defaultValue={t.notes} full maxLength={1000} />
             <div className="full form-foot"><Submit>Salvar</Submit></div>
           </Form>
@@ -42,6 +48,11 @@ export async function AdminTenant({ params }: { params: Promise<{ id: string }> 
           </Form>
         </div></section>
       </div>
+      <section className="panel" style={{ marginTop: 18 }}><h2>Uso do plano</h2>
+        <div className="pb"><PlanBars u={usage} /></div>
+        <h3 className="sec" style={{ margin: "0 18px 8px" }}>Conectados agora</h3>
+        <OnlineTable rows={online} />
+      </section>
       <h2 style={{ margin: "22px 0 10px" }}>Usuários da empresa</h2>
       <UserTable users={us} hrefBase="/usuarios" />
     </>

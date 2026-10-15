@@ -110,6 +110,12 @@ abrir `http://demo.localhost:3000`.
   - **Comunicação e avisos** (`messages`, `chat_reads`, `tasks`, `notifications`; src/server/comm-actions.ts, página
     `/comunicacao`): chat geral e direto, tarefas, avisos e sininho na barra superior; botão "Avisar" no pedido, OP e montagem.
 
+- **Plano de usuários por empresa** (out/2026): `tenants.max_users` (usuários ativos cadastrados) e `tenants.max_sessions`
+  (pessoas diferentes conectadas ao mesmo tempo), vazio = sem limite. Configura no painel do sistema (Empresas › empresa).
+  Regras em `src/lib/limits.ts`: cadastro/reativação de usuário bloqueia ao passar do limite; o login bloqueia quando já há
+  o máximo de pessoas conectadas (a mesma pessoa em outro aparelho não ocupa vaga). Conectado = sessão válida usada dentro
+  de SESSION_IDLE_MINUTES. O administrador da empresa vê o uso e desconecta pessoas em Administração › Usuários.
+
 ## Próximos passos sugeridos
 - Emissão real de NF-e (provedor) quando for necessário.
 - Importação de cadastros por planilha.

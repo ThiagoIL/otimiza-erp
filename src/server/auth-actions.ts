@@ -9,6 +9,7 @@ import { hashPassword, passwordProblem, verifyPassword } from "@/lib/password";
 import { hit } from "@/lib/rate-limit";
 import { clientIp } from "@/lib/request";
 import { audit } from "@/lib/audit";
+import { sessionLimitError } from "@/lib/limits";
 import { formObject, keepValues, zEmail } from "@/lib/forms";
 import type { ActionState } from "@/lib/action";
 
@@ -65,6 +66,14 @@ export async function loginAction(_: ActionState, fd: FormData): Promise<ActionS
     return { error: GENERIC, values: keepValues(raw) };
   }
 
+  // limite do plano: pessoas conectadas ao mesmo tempo na empresa
+  if (tenantId) {
+    const full = await sessionLimitError(tenantId, user.id);
+    if (full) {
+      await audit({ action: "login.limite", tenantId, userId: user.id, userEmail: user.email });
+      return { error: full, values: keepValues(raw) };
+    }
+  }
   await db.update(users).set({ failedLogins: 0, lockedUntil: null, lastLoginAt: sql`now()` }).where(eq(users.id, user.id));
   await createSession(user, info.area === "admin" ? "ADMIN" : "TENANT");
   await audit({ action: "login", tenantId, userId: user.id, userEmail: user.email });

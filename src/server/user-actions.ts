@@ -14,6 +14,7 @@ import { canChangeRole, canChangeStatus, canDelete, canManage, canResetPassword,
 import { generateTempPassword, hashPassword } from "@/lib/password";
 import { revokeUserSessions } from "@/lib/session";
 import { audit } from "@/lib/audit";
+import { userLimitError } from "@/lib/limits";
 import { friendlyDbError } from "@/lib/errors";
 import { formObject, keepValues, zEmail, zName, zodFail } from "@/lib/forms";
 import type { ActionState } from "@/lib/action";
@@ -66,6 +67,12 @@ export async function createUserAction(_: ActionState, fd: FormData): Promise<Ac
     tenantId = t.id;
   }
 
+  // limite do plano: usuários ativos cadastrados na empresa
+  if (tenantId) {
+    const full = await userLimitError(tenantId);
+    if (full) return { error: full, values: keepValues(raw) };
+  }
+
   const dup = await db.select({ id: users.id }).from(users)
     .where(and(eq(users.email, email), tenantId ? eq(users.tenantId, tenantId) : isNull(users.tenantId))).limit(1);
   if (dup.length) return { fields: { email: "Já existe um usuário com este e-mail." }, error: "Confira os campos destacados.", values: keepValues(raw) };
@@ -112,6 +119,11 @@ export async function updateUserAction(_: ActionState, fd: FormData): Promise<Ac
   const r2 = canChangeStatus(ctx.actor, t, p.data.situacao);
   if (!r2.ok) return { error: r2.reason, values: keepValues(raw) };
 
+  // reativar um usuário ocupa de novo uma vaga do plano
+  if (target.tenantId && target.status !== "ACTIVE" && p.data.situacao === "ACTIVE") {
+    const full = await userLimitError(target.tenantId);
+    if (full) return { error: full, values: keepValues(raw) };
+  }
   try {
     await db.update(users).set({ name: p.data.nome, role: p.data.papel, status: p.data.situacao }).where(eq(users.id, target.id));
   } catch (err) {
