@@ -6,8 +6,8 @@ import { Icon } from "./Icon";
 import { Modal } from "./client";
 import { toast } from "./Toast";
 import { PageHead } from "./ui";
-import { PickField } from "./SearchPicker";
-import { searchGroupsAction } from "@/server/search-actions";
+import { PickField, Sel } from "./SearchPicker";
+import { searchGroupsAction, searchPartnersAction } from "@/server/search-actions";
 
 export const COLORS = ["#6B7785", "#E0601A", "#1E3A5F", "#7A4FA0", "#1F8A8A", "#2E7D4F", "#B3261E", "#8A6D1F", "#2F6E9A", "#C77700"];
 
@@ -44,8 +44,23 @@ function GroupField({ f, value, rowId, err }: { f: CField; value: unknown; rowId
   );
 }
 
+/** Cliente escolhido pela janela de pesquisa. */
+function PartnerField({ f, value, err }: { f: CField; value: unknown; err?: string }) {
+  const id0 = typeof value === "string" ? value : "";
+  const [v, setV] = useState(id0 ? { id: id0, label: f.options?.find(([o]) => o === id0)?.[1] ?? "" } : null);
+  return (
+    <>
+      <PickField id={`f_${f.k}`} name={f.k} label={f.label} value={v} onChange={(r) => setV(r ? { id: r.id, label: r.label } : null)} className={`fld${f.full ? " full" : ""}${err ? " err" : ""}`}
+        hint={err ? undefined : f.hint} emptyText="Nenhum"
+        picker={{ title: "Pesquisar cliente", fetcher: searchPartnersAction, filter: "Cliente", lockFilter: true, placeholder: "Nome, fantasia, CNPJ/CPF ou cidade", columns: ["Nome", "Razão social", "CNPJ/CPF", "Cidade", "Telefone"] }} />
+      {err && <div className="errmsg">{err}</div>}
+    </>
+  );
+}
+
 export function FieldInput({ f, value, err, rowId = "" }: { f: CField; value: unknown; err?: string; rowId?: string }) {
   if (f.t === "group") return <GroupField f={f} value={value} rowId={rowId} err={err} />;
+  if (f.t === "partner") return <PartnerField f={f} value={value} err={err} />;
   const id = `f_${f.k}`;
   const label = <>{f.label}{f.req && <span className="req" aria-hidden="true"> *</span>}</>;
   if (f.t === "check") {
@@ -64,7 +79,7 @@ export function FieldInput({ f, value, err, rowId = "" }: { f: CField; value: un
   const v = inputValue(f, value);
   let input;
   if (f.t === "select") {
-    input = <select id={id} name={f.k} defaultValue={v} aria-invalid={!!err}><option value="">{f.req ? "Selecione…" : "Nenhum"}</option>{(f.options ?? []).map(([o, l]) => <option key={o} value={o}>{l}</option>)}</select>;
+    input = <Sel id={id} name={f.k} defaultValue={v} aria-invalid={!!err}><option value="">{f.req ? "Selecione…" : "Nenhum"}</option>{(f.options ?? []).map(([o, l]) => <option key={o} value={o}>{l}</option>)}</Sel>;
   } else if (f.t === "textarea") {
     input = <textarea id={id} name={f.k} rows={3} defaultValue={v} aria-invalid={!!err} />;
   } else {

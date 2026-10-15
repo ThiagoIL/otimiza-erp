@@ -104,3 +104,51 @@ export async function searchOrdersAction(raw: In): Promise<SearchResult> {
     };
   });
 }
+
+/**
+ * Locais de entrega e de montagem: "Retira na fábrica", o endereço do cliente e os locais cadastrados
+ * (Comercial › Configurações › Locais de entrega). filter = cliente do pedido (os locais dele vêm primeiro).
+ */
+export async function searchPlacesAction(raw: In): Promise<SearchResult> {
+  const s = await act(["comercial", "producao"]);
+  if (!s) return { error: NO_ACCESS.error };
+  const d = input.parse(raw);
+  return s.tx(async (tx) => {
+    const fixed: SearchRow[] = [{ id: "fabrica", label: "Retira na fábrica", cells: ["Retira na fábrica", "—", "Padrão"] }];
+    if (d.filter) {
+      const [p] = await tx.select().from(E.partners).where(eq(E.partners.id, d.filter)).limit(1);
+      if (p) {
+        const addr = [p.street && `${p.street}${p.number ? ", " + p.number : ""}`, p.district, p.city && `${p.city}${p.uf ? "/" + p.uf : ""}`].filter(Boolean).join(" · ");
+        if (addr) fixed.push({ id: "cliente", label: addr, cells: ["Endereço do cliente", addr, p.tradeName || p.name] });
+      }
+    }
+    const q = d.q.trim().toLowerCase();
+    const fx = fixed.filter((r) => !q || r.cells.join(" ").toLowerCase().includes(q));
+    const c: SQL[] = [eq(E.deliveryPlaces.active, true)];
+    if (q) c.push(or(ilike(E.deliveryPlaces.name, like(d.q)), ilike(E.deliveryPlaces.address, like(d.q)))!);
+    const where = and(...c);
+    const rows = await tx.select({ p: E.deliveryPlaces, cli: sql<string | null>`coalesce(${E.partners.tradeName}, ${E.partners.name})` }).from(E.deliveryPlaces)
+      .leftJoin(E.partners, eq(E.partners.id, E.deliveryPlaces.partnerId)).where(where)
+      .orderBy(d.filter ? sql`case when ${E.deliveryPlaces.partnerId} = ${d.filter} then 0 else 1 end` : asc(E.deliveryPlaces.name), asc(E.deliveryPlaces.name))
+      .limit(PAGE).offset((d.page - 1) * PAGE);
+    const [{ total }] = await tx.select({ total: sql<number>`count(*)::int` }).from(E.deliveryPlaces).where(where);
+    const list = rows.map(({ p, cli }) => {
+      const label = p.address ? `${p.name} · ${p.address}` : p.name;
+      return { id: p.id, label, cells: [p.name, p.address ?? "—", cli ?? "—"] };
+    });
+    return { total: total + (d.page === 1 ? fx.length : 0), rows: d.page === 1 ? [...fx, ...list] : list };
+  });
+}
+
+/** Guarda o local digitado para usar de novo nas próximas pesquisas. */
+export async function savePlaceAction(raw: { name: string; partnerId?: string | null }): Promise<{ ok?: boolean; error?: string; message?: string }> {
+  const s = await act(["comercial", "producao"]);
+  if (!s) return { error: NO_ACCESS.error };
+  const name = String(raw.name ?? "").trim().slice(0, 200);
+  if (name.length < 3) return { error: "Digite o local antes de guardar." };
+  await s.tx(async (tx) => {
+    const [ja] = await tx.select({ id: E.deliveryPlaces.id }).from(E.deliveryPlaces).where(ilike(E.deliveryPlaces.name, name)).limit(1);
+    if (!ja) await tx.insert(E.deliveryPlaces).values({ tenantId: s.tenant.id, name, partnerId: raw.partnerId || null });
+  });
+  return { ok: true, message: "Local guardado: ele aparece na pesquisa de locais." };
+}

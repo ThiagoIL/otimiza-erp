@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Sel } from "@/components/SearchPicker";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, ilike, inArray, or, sql, type SQL } from "drizzle-orm";
 import { page, type PageCtx } from "@/lib/access";
@@ -8,6 +9,7 @@ import { ActionButton, ClickRow, FilterBar, FilterTabs } from "@/components/clie
 import { Icon } from "@/components/Icon";
 import { AssemblyFromOp, OpBoard, OpHeader, OpStructure, OutputForm, QueueActions, RequisitionButton, StageSelect, type OpCard } from "@/components/ProductionUI";
 import { StockMoveButtons } from "@/components/StockMove";
+import { NotifyButton } from "@/components/Comm";
 import { Attachments } from "@/components/Attachments";
 import { deleteOpAction, noProductionAction, reloadBomAction } from "@/server/production-actions";
 import { opCosts } from "@/server/production-costs";
@@ -69,6 +71,7 @@ export async function ProductionQueue({ searchParams }: { searchParams: Promise<
                   <Link href={`/pedidos/${o.id}`} style={{ textDecoration: "none", color: "inherit" }}>Pedido {o.number}</Link>
                   <span className="muted" style={{ fontWeight: 500 }}>· {cli}</span>
                   <span className={`badge${late ? " bad" : ""}`}>Entrega {fmtD(o.deliveryDate)}</span>
+                  {o.hasAssembly && <span className="badge" style={{ color: "var(--steel)" }}><Icon name="tool" size={12} /> Com montagem</span>}
                   {o.deliveryPlace && <span className="muted" style={{ fontWeight: 400, fontSize: 12.5 }}>{o.deliveryPlace}</span>}
                   <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}>
                     {s.edit && st === "PENDENTE" && <QueueActions order={{ id: o.id, number: o.number, client: cli, delivery: o.deliveryDate, notes: o.internalNotes, lines: lines.map(({ l, i }) => ({ itemId: i.id, code: i.code, name: i.name, unit: i.unit, qty: Number(l.qty), fab: i.type === "PRODUTO_ACABADO" || i.type === "SEMIACABADO" })) }} centers={centers} team={team} />}
@@ -140,10 +143,10 @@ export async function OpsPage({ searchParams }: { searchParams: Promise<SP> }) {
       <FilterBar solo={mode === "quadro"} right={<span className="count">{cards.length} OPs</span>}>
         {mode === "lista" && <input type="hidden" name="modo" value="lista" />}
         <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Nº, item ou cliente" aria-label="Buscar OP" /></div>
-        <select name="centro" defaultValue={sp.centro ?? ""} aria-label="Centro"><option value="">Todos os centros</option>{L.centers.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</select>
-        <select name="resp" defaultValue={sp.resp ?? ""} aria-label="Responsável"><option value="">Todos os responsáveis</option>{L.team.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</select>
+        <Sel name="centro" defaultValue={sp.centro ?? ""} aria-label="Centro"><option value="">Todos os centros</option>{L.centers.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
+        <Sel name="resp" defaultValue={sp.resp ?? ""} aria-label="Responsável"><option value="">Todos os responsáveis</option>{L.team.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
         <select name="prio" defaultValue={sp.prio ?? ""} aria-label="Prioridade"><option value="">Todas as prioridades</option>{Object.keys(PRIORITIES).map((p) => <option key={p}>{p}</option>)}</select>
-        {mode === "lista" && <select name="etapa" defaultValue={sp.etapa ?? ""} aria-label="Etapa"><option value="">Todas as etapas</option>{L.stages.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>}
+        {mode === "lista" && <Sel name="etapa" defaultValue={sp.etapa ?? ""} aria-label="Etapa"><option value="">Todas as etapas</option>{L.stages.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Sel>}
         <label className="chk"><input type="checkbox" name="atraso" value="1" defaultChecked={!!sp.atraso} /> Só atrasadas</label>
         <select name="sit" defaultValue={sp.sit ?? ""} aria-label="Situação"><option value="">Em aberto</option><option value="concluidas">Concluídas</option><option value="canceladas">Canceladas</option><option value="todas">Todas</option></select>
       </FilterBar>
@@ -228,7 +231,9 @@ export async function OpDetail({ params }: { params: Promise<{ id: string }> }) 
   const stage = L.stages.find((x) => x.id === op.stageId);
   const withdrawn = new Map<string, number>();
   for (const { m } of d.moves) if (m.type === "SAIDA") withdrawn.set(m.itemId, (withdrawn.get(m.itemId) ?? 0) + Number(m.qty));
-  const compRows = d.comps.map(({ c, i }) => ({ id: c.id, itemId: c.itemId, code: i?.code ?? null, name: i?.name ?? c.description ?? "—", unit: i?.unit ?? "", required: Number(c.qtyRequired), done: Number(c.qtyDone), withdrawn: c.itemId ? withdrawn.get(c.itemId) ?? 0 : 0, fromBom: c.fromBom }));
+  const compRows = d.comps.map(({ c, i }) => ({ id: c.id, itemId: c.itemId, code: i?.code ?? null, name: i?.name ?? c.description ?? "—", unit: i?.unit ?? "", required: Number(c.qtyRequired), done: Number(c.qtyDone), withdrawn: c.itemId ? withdrawn.get(c.itemId) ?? 0 : 0, fromBom: c.fromBom, supply: c.supply }));
+  // retiradas de estoque desta OP: só o que saiu para ela (a entrada do produto produzido fica em "Produção apontada")
+  const outs = d.moves.filter(({ m }) => m.type !== "PRODUCAO");
   const balMap: Record<string, Record<string, number>> = {};
   for (const [k, v] of d.bal) { const [it, lc] = k.split("|"); (balMap[it] ??= {})[lc] = v; }
   const locOpts = d.locs.map((l) => [l.id, `${l.code} · ${l.name}`] as [string, string]);
@@ -243,6 +248,7 @@ export async function OpDetail({ params }: { params: Promise<{ id: string }> }) 
       <PageHead title={`OP ${op.number} · ${item.name}`} back={{ href: "/ops", label: "Ordens de produção" }}
         sub={[`${fmtQty(op.qty)} ${item.unit}`, d.cli ? d.cli.tradeName || d.cli.name : null, d.so ? `Pedido ${d.so.number}` : null, op.needDate ? `necessidade ${fmtD(op.needDate)}` : null].filter(Boolean).join(" · ")}
         actions={<>
+          <NotifyButton link={`/ops/${op.id}`} label={`OP ${op.number}`} suggest={`Revisar a OP ${op.number} · ${item.name}`} />
           {s.edit ? <StageSelect opId={op.id} stageId={op.stageId} stages={stages} /> : stage && <StatusBadge color={stage.color} label={stage.name} />}
           {s.edit && <ActionButton className="btn btn-danger" confirm={`Excluir a OP ${op.number}?`} action={deleteOpAction.bind(null, op.id)}><Icon name="trash" size={16} /></ActionButton>}
         </>} />
@@ -250,7 +256,7 @@ export async function OpDetail({ params }: { params: Promise<{ id: string }> }) 
         <div className="kpi"><b>{fmtQty(op.qtyProduced)}<small className="muted" style={{ fontSize: 15 }}> / {fmtQty(op.qty)}</small></b><span>Produzido ({item.unit})</span></div>
         <div className="kpi"><b>{pct(compRows.reduce((a, r) => a + Math.min(r.done, r.required), 0), compRows.reduce((a, r) => a + r.required, 0))}</b><span>Estrutura apontada</span></div>
         <div className="kpi"><b>{fmtQty(sent)}</b><span>Enviado para montagem</span></div>
-        <div className="kpi"><b>{d.moves.filter((x) => x.m.type === "SAIDA").length}</b><span>Retiradas de estoque</span></div>
+        <div className="kpi"><b>{outs.length}</b><span>Retiradas de estoque</span></div>
         <div className="kpi"><b>{d.times.reduce((a, x) => a + Number(x.t.hours), 0).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} h</b><span>Horas apontadas</span></div>
       </div>
       <div className="sheet">
@@ -272,18 +278,18 @@ export async function OpDetail({ params }: { params: Promise<{ id: string }> }) 
           {!d.outputs.length && !(s.edit && left > 0) && <div className="pb muted">Nada apontado.</div>}
         </Panel>
 
-        <Panel id="retiradas" className="sec-panel" title="Retiradas de estoque para esta OP" sub={`${d.moves.length} lançamentos`}
+        <Panel id="retiradas" className="sec-panel" title="Retiradas de estoque para esta OP" sub={`${outs.length} lançamentos`}
           actions={s.edit && <><RequisitionButton opId={op.id} rows={compRows} locations={locOpts} balances={balMap} /><StockMoveButtons locations={locOpts} only={["SAIDA"]} ops={[[op.id, `OP ${op.number}`]]} /></>}>
-          {d.moves.length ? <div className="tbl solo" style={{ border: 0, borderRadius: 0, maxHeight: "none" }}><table>
+          {outs.length ? <div className="tbl solo" style={{ border: 0, borderRadius: 0, maxHeight: "none" }}><table>
             <thead><tr><th>Data</th><th>Tipo</th><th>Item</th><th>Local</th><th className="num">Quantidade</th>{s.access.costs && <th className="num">Valor</th>}<th>Usuário</th></tr></thead>
-            <tbody>{d.moves.map(({ m, i, l }) => <tr key={m.id}><td className="code">{fmtD(m.date)}</td><td>{m.type === "SAIDA" ? <span className="mv-out">Retirada</span> : m.type === "PRODUCAO" ? <span className="mv-in">Entrada de produção</span> : m.type}</td>
+            <tbody>{outs.map(({ m, i, l }) => <tr key={m.id}><td className="code">{fmtD(m.date)}</td><td>{m.type === "SAIDA" ? <span className="mv-out">Retirada</span> : m.type === "ENTRADA" ? <span className="mv-in">Devolução</span> : m.type}</td>
               <td className="desc">{i.name}<div className="muted" style={{ fontSize: 12, fontWeight: 400 }}>{i.code}</div></td><td>{l}</td><td className="num">{fmtQty(m.qty)} {i.unit}</td>
               {s.access.costs && <td className="num">{fmtMoney(Number(m.qty) * Number(m.unitCost))}</td>}<td style={{ fontSize: 12.5 }}>{m.userName}</td></tr>)}</tbody></table></div>
             : <div className="pb muted" style={{ fontSize: 13 }}>Nenhuma retirada de estoque para esta OP ainda. Use “Requisitar pela estrutura” ou “Saída”.</div>}
         </Panel>
 
         <Panel id="montagens" className="sec-panel" title="Montagens desta OP" sub={`${fmtQty(sent)} de ${fmtQty(op.qtyProduced)} produzidas enviadas`}
-          actions={s.edit && <AssemblyFromOp opId={op.id} free={free} unit={item.unit} defaultName={`${item.name}${d.cli ? " · " + (d.cli.tradeName || d.cli.name) : ""}`} team={L.team.map((c) => [c.id, c.n])} due={op.needDate} />}>
+          actions={s.edit && <AssemblyFromOp opId={op.id} free={free} unit={item.unit} partnerId={op.partnerId} place={d.so?.deliveryPlace ?? ""} defaultName={`${item.name}${d.cli ? " · " + (d.cli.tradeName || d.cli.name) : ""}`} team={L.team.map((c) => [c.id, c.n])} due={op.needDate} />}>
           {d.asms.length ? <div className="tbl solo" style={{ border: 0, borderRadius: 0, maxHeight: "none" }}><table>
             <thead><tr><th className="num">Nº</th><th>Montagem</th><th className="num">Quantidade</th><th>Previsão</th><th>Andamento</th><th>Situação</th></tr></thead>
             <tbody>{d.asms.map(({ a, done, tot }) => <ClickRow key={a.id} href={`/montagens/${a.id}`}><td className="num"><b>{a.number}</b></td><td className="desc">{a.name}</td><td className="num">{fmtQty(a.qty)}</td><td className="code">{fmtD(a.dueDate)}</td>
@@ -292,7 +298,7 @@ export async function OpDetail({ params }: { params: Promise<{ id: string }> }) 
             : <div className="pb muted" style={{ fontSize: 13 }}>Nenhuma montagem. Depois de apontar a produção, envie as peças prontas para a montagem.</div>}
         </Panel>
 
-        <Panel id="horas" className="sec-panel" title="Horas apontadas" actions={<BtnLink small href={`/apontamentos?op=${op.id}`} icon="clock">Apontar horas</BtnLink>}>
+        <Panel id="horas" className="sec-panel" title="Horas apontadas" actions={<BtnLink small href={`/apontamentos/horas?op=${op.id}`} icon="clock">Apontar horas</BtnLink>}>
           {d.times.length ? <div className="tbl solo" style={{ border: 0, borderRadius: 0, maxHeight: "none" }}><table>
             <thead><tr><th>Data</th><th>Pessoa</th><th>Etapa</th><th>Início</th><th>Fim</th><th className="num">Horas</th></tr></thead>
             <tbody>{d.times.map(({ t, p, st }) => <tr key={t.id}><td className="code">{fmtD(t.date)}</td><td>{p}</td><td>{st ?? "—"}</td><td className="code">{t.start}</td><td className="code">{t.end ?? <span className="live"><span className="live-dot" />agora</span>}</td><td className="num">{Number(t.hours).toLocaleString("pt-BR")}</td></tr>)}</tbody></table></div>

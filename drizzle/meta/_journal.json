@@ -43,6 +43,20 @@
       "when": 1791919281697,
       "tag": "0005_grupos_vendedores_dados",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792062278551,
+      "tag": "0006_etapas_apontamentos_comunicacao",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792062289218,
+      "tag": "0007_etapas_apontamentos_dados",
+      "breakpoints": true
     }
   ]
 }

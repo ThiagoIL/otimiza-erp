@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { Sel } from "./SearchPicker";
 import { Modal } from "./client";
 import { Icon } from "./Icon";
 import { searchItemsAction, type PickRow } from "@/server/item-actions";
@@ -52,8 +53,8 @@ export function ItemPicker({ onPick, onClose, title = "Selecionar itens", priceL
       </>}>
       <div className="bar" style={{ borderRadius: "var(--r-lg) var(--r-lg) 0 0" }}>
         <div className="search"><Icon name="search" size={16} /><input ref={inp} type="search" placeholder="Código, descrição ou complemento" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} aria-label="Buscar item" /></div>
-        <select value={groupId} onChange={(e) => { setGroup(e.target.value); setPage(1); }} aria-label="Grupo"><option value="">Todos os grupos</option>{data?.groups.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-        <select value={typeId} onChange={(e) => { setType(e.target.value); setPage(1); }} aria-label="Tipo"><option value="">Todos os tipos</option>{data?.types.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        <Sel value={groupId} onChange={(e) => { setGroup(e.target.value); setPage(1); }} aria-label="Grupo"><option value="">Todos os grupos</option>{data?.groups.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel>
+        <Sel value={typeId} onChange={(e) => { setType(e.target.value); setPage(1); }} aria-label="Tipo"><option value="">Todos os tipos</option>{data?.types.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel>
         <span className="grow" /><span className="count">{data ? `${data.total} itens` : "Carregando…"}</span>
       </div>
       <div className="tbl picker-t">

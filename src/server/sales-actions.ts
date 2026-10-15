@@ -4,7 +4,8 @@ import { z } from "zod";
 import { act, NO_ACCESS } from "@/lib/access";
 import { audit } from "@/lib/audit";
 import * as E from "@/db/erp";
-import { nextNumber, ruleMsg, RuleError } from "./common";
+import { nextNumber, ruleMsg, RuleError, stageIdFor } from "./common";
+import type { Tx } from "@/lib/db";
 import { docTotals, isDate, today } from "@/lib/dates";
 import type { ActionState } from "@/lib/action";
 import { db } from "@/lib/db";
@@ -19,6 +20,8 @@ const soSchema = z.object({
   deliveryDate: z.string().refine((v) => !v || isDate(v), "Data de entrega inválida.").optional().nullable(),
   deliveryPlace: z.string().max(200).optional().nullable(),
   status: z.enum(["PROPOSTA", "APROVADO", "CANCELADO"]),
+  stageId: z.string().max(64).optional().nullable(),
+  hasAssembly: z.boolean().default(false),
   paymentMethodId: z.string().max(64).optional().nullable(),
   paymentTermId: z.string().max(64).optional().nullable(),
   installments: z.array(z.object({ n: z.number().int(), due: z.string().refine(isDate), value: num })).max(120),
@@ -56,8 +59,13 @@ export async function saveSalesOrderAction(input: SOInput): Promise<ActionState 
       if (!cli) throw new RuleError("Cliente não encontrado.");
       const its = await tx.select({ id: E.items.id }).from(E.items).where(inArray(E.items.id, d.items.map((i) => i.itemId)));
       if (its.length !== new Set(d.items.map((i) => i.itemId)).size) throw new RuleError("Algum item do pedido não existe mais.");
+      // etapa escolhida: precisa ter o mesmo comportamento da situação
+      if (d.stageId) {
+        const [st] = await tx.select({ kind: E.salesStages.kind }).from(E.salesStages).where(eq(E.salesStages.id, d.stageId)).limit(1);
+        if (!st || st.kind !== d.status) throw new RuleError("Etapa inválida para este pedido.");
+      }
       const values = {
-        partnerId: d.partnerId, salespersonId: d.salespersonId || null, salespersonName, issueDate: d.issueDate, deliveryDate: d.deliveryDate || null,
+        partnerId: d.partnerId, hasAssembly: d.hasAssembly, salespersonId: d.salespersonId || null, salespersonName, issueDate: d.issueDate, deliveryDate: d.deliveryDate || null,
         deliveryPlace: d.deliveryPlace?.trim() || null, paymentMethodId: d.paymentMethodId || null, paymentTermId: d.paymentTermId || null,
         installments: d.installments, discount: String(d.discount), freight: String(d.freight), total: String(t.total),
         notes: d.notes?.trim() || null, internalNotes: d.internalNotes?.trim() || null, custom,
@@ -69,13 +77,13 @@ export async function saveSalesOrderAction(input: SOInput): Promise<ActionState 
         const hasOp = (await tx.select({ id: E.productionOrders.id }).from(E.productionOrders).where(eq(E.productionOrders.salesOrderId, id)).limit(1)).length > 0;
         if (d.status === "PROPOSTA" && hasOp) throw new RuleError("Este pedido já tem ordem de produção. Ele não pode voltar para proposta.");
         const prod = d.status === "APROVADO" ? (cur.productionStatus ?? "PENDENTE") : d.status === "PROPOSTA" ? null : cur.productionStatus;
-        await tx.update(E.salesOrders).set({ ...values, status: d.status, productionStatus: prod, approvedAt: d.status === "APROVADO" ? (cur.approvedAt ?? today()) : cur.approvedAt })
+        await tx.update(E.salesOrders).set({ ...values, status: d.status, stageId: d.stageId || await stageIdFor(tx, d.status, cur.stageId), productionStatus: prod, approvedAt: d.status === "APROVADO" ? (cur.approvedAt ?? today()) : cur.approvedAt })
           .where(eq(E.salesOrders.id, id));
         await tx.delete(E.salesOrderItems).where(eq(E.salesOrderItems.orderId, id));
         number = cur.number;
       } else {
         number = await nextNumber(tx, s.tenant.id, "sales_order", E.salesOrders, E.salesOrders.number);
-        const [r] = await tx.insert(E.salesOrders).values({ ...values, tenantId: s.tenant.id, number, status: d.status,
+        const [r] = await tx.insert(E.salesOrders).values({ ...values, tenantId: s.tenant.id, number, status: d.status, stageId: d.stageId || await stageIdFor(tx, d.status),
           productionStatus: d.status === "APROVADO" ? "PENDENTE" : null, approvedAt: d.status === "APROVADO" ? today() : null }).returning({ id: E.salesOrders.id });
         id = r.id;
       }
@@ -88,12 +96,9 @@ export async function saveSalesOrderAction(input: SOInput): Promise<ActionState 
   return { ok: true, id, message: `${d.status === "PROPOSTA" ? "Proposta" : "Pedido"} ${number} salvo.`, redirectTo: d.id ? undefined : `/pedidos/${id}` };
 }
 
-/** Aprovar: a proposta vira pedido e entra na fila da produção (que decide se gera OP). */
-export async function setSalesStatusAction(id: string, status: "APROVADO" | "PROPOSTA" | "CANCELADO"): Promise<ActionState> {
-  const s = await act("comercial");
-  if (!s) return NO_ACCESS;
-  try {
-    const n = await s.tx(async (tx) => {
+type Status = "APROVADO" | "PROPOSTA" | "CANCELADO";
+/** Troca a situação com as regras de cada uma (e a etapa: a escolhida ou a padrão da situação). */
+async function changeStatus(tx: Tx, id: string, status: Status, stageId?: string) {
       const [cur] = await tx.select().from(E.salesOrders).where(eq(E.salesOrders.id, id)).limit(1).for("update");
       if (!cur) throw new RuleError("Pedido não encontrado.");
       if (cur.status === "FATURADO") throw new RuleError("Pedido já faturado. Cancele a nota em Faturamento para reabrir.");
@@ -105,14 +110,45 @@ export async function setSalesStatusAction(id: string, status: "APROVADO" | "PRO
         if (miss) throw new RuleError(`Preencha o campo “${miss.label}” antes de aprovar.`);
       }
       await tx.update(E.salesOrders).set({
-        status,
+        status, stageId: stageId ?? await stageIdFor(tx, status, cur.stageId),
         productionStatus: status === "APROVADO" ? (cur.productionStatus ?? "PENDENTE") : status === "PROPOSTA" ? null : cur.productionStatus,
         approvedAt: status === "APROVADO" ? (cur.approvedAt ?? today()) : cur.approvedAt,
       }).where(eq(E.salesOrders.id, id));
       return cur.number;
-    });
+}
+
+/** Aprovar: a proposta vira pedido e entra na fila da produção (que decide se gera OP). */
+export async function setSalesStatusAction(id: string, status: Status): Promise<ActionState> {
+  const s = await act("comercial");
+  if (!s) return NO_ACCESS;
+  try {
+    const n = await s.tx((tx) => changeStatus(tx, id, status));
     await audit({ action: `pedido.${status.toLowerCase()}`, tenantId: s.tenant.id, userId: s.user.id, userEmail: s.user.email, entity: "pedido", entityId: id });
     return { ok: true, message: status === "APROVADO" ? `Pedido ${n} aprovado e enviado para a produção.` : status === "CANCELADO" ? `Pedido ${n} cancelado.` : `Pedido ${n} voltou para proposta.` };
+  } catch (err) {
+    return { error: ruleMsg(err) };
+  }
+}
+
+/** Muda a etapa do pedido. Se a etapa tem outro comportamento, troca também a situação (com as mesmas regras). */
+export async function setSalesStageAction(id: string, stageId: string): Promise<ActionState> {
+  const s = await act("comercial");
+  if (!s) return NO_ACCESS;
+  try {
+    const msg = await s.tx(async (tx) => {
+      const [st] = await tx.select().from(E.salesStages).where(eq(E.salesStages.id, stageId)).limit(1);
+      const [cur] = await tx.select().from(E.salesOrders).where(eq(E.salesOrders.id, id)).limit(1);
+      if (!st || !cur) throw new RuleError("Pedido ou etapa não encontrada.");
+      if (st.kind === cur.status) {
+        await tx.update(E.salesOrders).set({ stageId }).where(eq(E.salesOrders.id, id));
+      } else {
+        if (st.kind === "FATURADO") throw new RuleError("Para faturar o pedido, use o botão Faturar.");
+        await changeStatus(tx, id, st.kind as Status, stageId);
+      }
+      return `Pedido ${cur.number} em “${st.name}”.`;
+    });
+    await audit({ action: "pedido.etapa", tenantId: s.tenant.id, userId: s.user.id, userEmail: s.user.email, entity: "pedido", entityId: id, data: { etapa: stageId } });
+    return { ok: true, message: msg };
   } catch (err) {
     return { error: ruleMsg(err) };
   }
@@ -150,7 +186,7 @@ export async function duplicateSalesOrderAction(id: string): Promise<ActionState
       const its = await tx.select().from(E.salesOrderItems).where(eq(E.salesOrderItems.orderId, id));
       const number = await nextNumber(tx, s.tenant.id, "sales_order", E.salesOrders, E.salesOrders.number);
       const { id: _i, createdAt: _c, updatedAt: _u, ...rest } = cur;
-      const [r] = await tx.insert(E.salesOrders).values({ ...rest, number, status: "PROPOSTA", productionStatus: null, approvedAt: null, issueDate: today(), deliveryDate: null, installments: [], crmDealId: null }).returning({ id: E.salesOrders.id });
+      const [r] = await tx.insert(E.salesOrders).values({ ...rest, number, status: "PROPOSTA", stageId: await stageIdFor(tx, "PROPOSTA"), productionStatus: null, approvedAt: null, issueDate: today(), deliveryDate: null, installments: [], crmDealId: null }).returning({ id: E.salesOrders.id });
       if (its.length) await tx.insert(E.salesOrderItems).values(its.map(({ id: _x, createdAt: _y, updatedAt: _z, ...i }) => ({ ...i, orderId: r.id })));
       return r.id;
     });

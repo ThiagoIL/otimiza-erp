@@ -6,12 +6,16 @@ import { isDate } from "@/lib/dates";
 type SP = Record<string, string | undefined>;
 
 /** Filtros da lista de pedidos (também usados na exportação CSV). */
+/** Etapa do pedido (a da situação, para pedidos antigos sem etapa gravada). */
+export const SO_STAGE = sql`coalesce("sales_orders"."stage_id", (select ss.id from sales_stages ss where ss.system and ss.kind = "sales_orders"."status" limit 1))`;
+
 export async function salesWhere(tenantId: string, sp: SP, withStatus = true): Promise<SQL> {
   const c: SQL[] = [eq(E.salesOrders.tenantId, tenantId)];
   // sem situação escolhida: só os em aberto (proposta e aprovado). "todos" mostra também faturados e cancelados.
   if (withStatus) {
     if (sp.st === "todos") { /* sem filtro */ }
-    else if (sp.st) c.push(eq(E.salesOrders.status, sp.st));
+    else if (sp.st && ["PROPOSTA", "APROVADO", "FATURADO", "CANCELADO"].includes(sp.st)) c.push(eq(E.salesOrders.status, sp.st));
+    else if (sp.st) c.push(sql`${SO_STAGE} = ${sp.st}`);
     else c.push(sql`${E.salesOrders.status} in ('PROPOSTA', 'APROVADO')`);
   }
   if (sp.num && /^\d+$/.test(sp.num.trim())) c.push(eq(E.salesOrders.number, Number(sp.num.trim())));

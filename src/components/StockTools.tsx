@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Sel } from "./SearchPicker";
 import { Icon } from "./Icon";
 import { useRun } from "./client";
 import { closeStockAction, createInventoryAction, saveCountsAction } from "@/server/stock-actions";
@@ -16,8 +17,8 @@ export function NewInventory({ locations, groups }: { locations: Opt[]; groups: 
     <section className="panel" style={{ marginBottom: 16 }}>
       <h2>Abrir novo inventário</h2>
       <div className="pb"><div className="form f4">
-        <div className="fld"><label htmlFor="iv_l">Local</label><select id="iv_l" value={f.locationId} onChange={(e) => setF({ ...f, locationId: e.target.value })}>{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        <div className="fld"><label htmlFor="iv_g">Grupo de itens</label><select id="iv_g" value={f.groupId} onChange={(e) => setF({ ...f, groupId: e.target.value })}><option value="">Todos os grupos</option>{groups.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld"><label htmlFor="iv_l">Local</label><Sel id="iv_l" value={f.locationId} onChange={(e) => setF({ ...f, locationId: e.target.value })}>{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+        <div className="fld"><label htmlFor="iv_g">Grupo de itens</label><Sel id="iv_g" value={f.groupId} onChange={(e) => setF({ ...f, groupId: e.target.value })}><option value="">Todos os grupos</option>{groups.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         <div className="fld"><label htmlFor="iv_d">Data da contagem</label><input id="iv_d" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
         <div className="fld"><label htmlFor="iv_x">Descrição</label><input id="iv_x" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder="Ex.: Inventário de fim de mês" /></div>
         <div className="fld span2"><label className="chk"><input type="checkbox" checked={f.withZero} onChange={(e) => setF({ ...f, withZero: e.target.checked })} /> Incluir itens sem saldo no local</label></div>

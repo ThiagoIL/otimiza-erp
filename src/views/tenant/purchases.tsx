@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Sel } from "@/components/SearchPicker";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import { page, type PageCtx } from "@/lib/access";
@@ -192,7 +193,7 @@ export async function POList({ searchParams }: { searchParams: Promise<SP> }) {
         tabs={<FilterTabs name="st" value={sp.st ?? ""} options={[{ v: "", label: "Todos", n: cnt("") }, ...Object.entries(PO_STATUS).map(([v, x]) => ({ v, label: x.label, n: cnt(v) }))]} />}
         more={<label className="fl">Item <input type="text" name="item" defaultValue={sp.item ?? ""} placeholder="código ou descrição" /></label>}>
         <input type="text" name="num" defaultValue={sp.num ?? ""} placeholder="Nº do pedido" aria-label="Número" style={{ width: 120 }} />
-        <select name="forn" defaultValue={sp.forn ?? ""} aria-label="Fornecedor" style={{ maxWidth: 230 }}><option value="">Todos os fornecedores</option>{sups.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</select>
+        <Sel name="forn" defaultValue={sp.forn ?? ""} aria-label="Fornecedor" style={{ maxWidth: 230 }}><option value="">Todos os fornecedores</option>{sups.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
         <label className="fl">Emissão de <input type="date" name="de" defaultValue={sp.de ?? ""} /></label>
         <label className="fl">até <input type="date" name="ate" defaultValue={sp.ate ?? ""} /></label>
       </FilterBar>

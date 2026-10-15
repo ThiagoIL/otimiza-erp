@@ -1,1 +1,1 @@
-export { Timesheets as default } from "@/views/tenant/timesheets";
+export { ReportsPage as default } from "@/views/tenant/reports";

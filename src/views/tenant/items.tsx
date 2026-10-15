@@ -1,4 +1,5 @@
 import { and, asc, eq, ilike, isNull, or, sql, type SQL } from "drizzle-orm";
+import { Sel } from "@/components/SearchPicker";
 import { inGroupTree } from "@/server/queries";
 import { page } from "@/lib/access";
 import * as E from "@/db/erp";
@@ -55,15 +56,15 @@ export async function TenantItems({ searchParams }: { searchParams: Promise<SP> 
       <FilterBar moreActive={moreActive} right={<span className="count">{data.total} itens</span>}
         more={<>
           <label className="fl">Código começa com <input type="text" name="cod" defaultValue={sp.cod ?? ""} style={{ width: 130 }} /></label>
-          <select name="un" defaultValue={sp.un ?? ""} aria-label="Unidade"><option value="">Todas as unidades</option>{data.units.map((u) => <option key={u.c}>{u.c}</option>)}</select>
-          <select name="forn" defaultValue={sp.forn ?? ""} aria-label="Fornecedor"><option value="">Qualquer fornecedor</option>{data.sups.map((f) => <option key={f.id} value={f.id}>{f.n}</option>)}</select>
-          <select name="local" defaultValue={sp.local ?? ""} aria-label="Local padrão"><option value="">Qualquer local padrão</option>{data.locs.map((l) => <option key={l.id} value={l.id}>{l.n}</option>)}</select>
+          <Sel name="un" defaultValue={sp.un ?? ""} aria-label="Unidade"><option value="">Todas as unidades</option>{data.units.map((u) => <option key={u.c}>{u.c}</option>)}</Sel>
+          <Sel name="forn" defaultValue={sp.forn ?? ""} aria-label="Fornecedor"><option value="">Qualquer fornecedor</option>{data.sups.map((f) => <option key={f.id} value={f.id}>{f.n}</option>)}</Sel>
+          <Sel name="local" defaultValue={sp.local ?? ""} aria-label="Local padrão"><option value="">Qualquer local padrão</option>{data.locs.map((l) => <option key={l.id} value={l.id}>{l.n}</option>)}</Sel>
           <select name="estr" defaultValue={sp.estr ?? ""} aria-label="Estrutura"><option value="">Estrutura: todos</option><option value="com">Com estrutura</option><option value="sem">Fabricados sem estrutura</option></select>
           <select name="ncm" defaultValue={sp.ncm ?? ""} aria-label="NCM"><option value="">NCM: todos</option><option value="sem">Sem NCM</option></select>
         </>}>
         <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={q} placeholder="Código, descrição ou complemento" aria-label="Buscar item" /></div>
-        <select name="grupo" defaultValue={sp.grupo ?? ""} aria-label="Grupo"><option value="">Todos os grupos</option>{data.groups.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</select>
-        <select name="tipo" defaultValue={sp.tipo ?? ""} aria-label="Tipo"><option value="">Todos os tipos</option>{data.types.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</select>
+        <Sel name="grupo" defaultValue={sp.grupo ?? ""} aria-label="Grupo"><option value="">Todos os grupos</option>{data.groups.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</Sel>
+        <Sel name="tipo" defaultValue={sp.tipo ?? ""} aria-label="Tipo"><option value="">Todos os tipos</option>{data.types.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</Sel>
         <select name="sit" defaultValue={sp.sit ?? ""} aria-label="Situação"><option value="">Ativos</option><option value="inativos">Inativos</option><option value="todos">Ativos e inativos</option></select>
       </FilterBar>
       <div className="tbl">

@@ -15,7 +15,11 @@ export type Access = {
   costs: boolean;
   isAdmin: boolean;
   profileName: string | null;
+  /** usuário só de apontamento: vê apenas a tela de apontar */
+  pointer: Pointer | null;
 };
+export type Pointer = "fabrica" | "montagem" | "ambos";
+export const POINTER_LABEL: Record<Pointer, string> = { fabrica: "Fábrica", montagem: "Montagem", ambos: "Fábrica e montagem" };
 
 export const canSee = (a: Access, m: ModuleKey) => m === ("inicio" as ModuleKey) || a.mods[m] !== "nenhum";
 export const canEdit = (a: Access, m: ModuleKey) => a.mods[m] === "editar";
@@ -30,6 +34,7 @@ export type NavModule = { id: string; label: string; icon: IconName; href?: stri
 export const TENANT_NAV: NavModule[] = [
   { id: "inicio", label: "Início", icon: "home", href: "/" },
   { id: "dash", label: "Dashboards", icon: "chart", href: "/dashboards", perm: "dash" },
+  { id: "comunicacao", label: "Comunicação e avisos", icon: "chat", href: "/comunicacao" },
   {
     id: "comercial", label: "Comercial", icon: "partner", perm: "comercial", items: [
       { href: "/pedidos", label: "Pedidos de venda" },
@@ -37,6 +42,8 @@ export const TENANT_NAV: NavModule[] = [
       { href: "/clientes", label: "Clientes e fornecedores" },
       { href: "/comercial/configuracoes", label: "Configurações", tabs: [
         { href: "/comercial/configuracoes", label: "Campos personalizados" },
+        { href: "/comercial/configuracoes/etapas", label: "Etapas do pedido" },
+        { href: "/comercial/configuracoes/locais", label: "Locais de entrega" },
         { href: "/comercial/configuracoes/perfis", label: "Perfis de cliente" },
         { href: "/comercial/configuracoes/vendedores", label: "Vendedores" },
       ] },
@@ -46,7 +53,11 @@ export const TENANT_NAV: NavModule[] = [
     id: "producao", label: "Produção", icon: "factory", perm: "producao", items: [
       { href: "/producao/pedidos", label: "Pedidos a produzir" },
       { href: "/ops", label: "Ordens de produção" },
-      { href: "/apontamentos", label: "Apontamentos" },
+      { href: "/apontar", label: "Apontar" },
+      { href: "/apontamentos", label: "Apontamentos", tabs: [
+        { href: "/apontamentos", label: "Finalizações" },
+        { href: "/apontamentos/horas", label: "Horas trabalhadas" },
+      ] },
       { href: "/montagens", label: "Montagens" },
       { href: "/producao/configuracoes", label: "Configurações", tabs: [
         { href: "/producao/configuracoes", label: "Etapas das OPs" },
@@ -105,6 +116,12 @@ export const TENANT_NAV: NavModule[] = [
       { href: "/empresa", label: "Empresa" },
     ],
   },
+];
+
+/** Menu do usuário só de apontamento. */
+export const POINTER_NAV: NavModule[] = [
+  { id: "apontar", label: "Apontar", icon: "check", href: "/apontar" },
+  { id: "comunicacao", label: "Comunicação e avisos", icon: "chat", href: "/comunicacao" },
 ];
 
 export const ADMIN_NAV: NavModule[] = [

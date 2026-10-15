@@ -4,7 +4,7 @@ import { z } from "zod";
 import { act, NO_ACCESS } from "@/lib/access";
 import { audit } from "@/lib/audit";
 import * as E from "@/db/erp";
-import { avgCosts, balances, balanceOf, insertMovements, ruleMsg, RuleError, closedUntil } from "./common";
+import { avgCosts, balances, balanceOf, insertMovements, ruleMsg, RuleError, closedUntil, stageIdFor } from "./common";
 import { installments, isDate } from "@/lib/dates";
 import type { ActionState } from "@/lib/action";
 
@@ -61,7 +61,7 @@ export async function createInvoiceAction(input: z.input<typeof invSchema>): Pro
         issueDate: d.issueDate, dueDate: x.due, amount: String(x.value), status: "ABERTO", paymentMethodId: so.paymentMethodId, installment: `${x.n}/${parc.length}`,
         originType: "NF", originId: inv.id, originNumber: String(d.number),
       })));
-      await tx.update(E.salesOrders).set({ status: "FATURADO", installments: parc }).where(eq(E.salesOrders.id, so.id));
+      await tx.update(E.salesOrders).set({ status: "FATURADO", stageId: await stageIdFor(tx, "FATURADO", so.stageId), installments: parc }).where(eq(E.salesOrders.id, so.id));
     });
   } catch (err) {
     return { error: ruleMsg(err) };
@@ -86,7 +86,7 @@ export async function cancelInvoiceAction(id: string): Promise<ActionState> {
       await tx.delete(E.stockMovements).where(eq(E.stockMovements.invoiceId, id));
       await tx.update(E.finTitles).set({ status: "CANCELADO" }).where(and(eq(E.finTitles.originType, "NF"), eq(E.finTitles.originId, id), eq(E.finTitles.status, "ABERTO")));
       await tx.update(E.invoices).set({ status: "CANCELADA" }).where(eq(E.invoices.id, id));
-      if (inv.salesOrderId) await tx.update(E.salesOrders).set({ status: "APROVADO" }).where(eq(E.salesOrders.id, inv.salesOrderId));
+      if (inv.salesOrderId) await tx.update(E.salesOrders).set({ status: "APROVADO", stageId: await stageIdFor(tx, "APROVADO") }).where(eq(E.salesOrders.id, inv.salesOrderId));
     });
   } catch (err) {
     return { error: ruleMsg(err) };

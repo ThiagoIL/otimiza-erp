@@ -6,7 +6,7 @@ import * as E from "@/db/erp";
 import type { ModuleKey } from "@/lib/modules";
 
 /** Tipos de campo dos cadastros simples. */
-export type SFieldType = "text" | "textarea" | "date" | "num" | "int" | "money" | "select" | "check" | "color" | "days" | "list" | "group";
+export type SFieldType = "text" | "textarea" | "date" | "num" | "int" | "money" | "select" | "check" | "color" | "days" | "list" | "group" | "partner";
 export type Opt = [string, string];
 export type SField = {
   k: string; label: string; t?: SFieldType; req?: boolean; full?: boolean; hint?: string; upper?: boolean; max?: number;
@@ -26,7 +26,11 @@ export type SEntity = {
   where?: SQL;
   /** regra extra antes de salvar; devolve a mensagem de erro ou null */
   check?: (tx: Tx, values: Record<string, unknown>, id: string) => Promise<string | null>;
+  /** regra extra antes de excluir; devolve a mensagem de erro ou null */
+  guard?: (tx: Tx, id: string) => Promise<string | null>;
 };
+
+const SO_KINDS: Opt[] = [["PROPOSTA", "Proposta (ainda não aprovada)"], ["APROVADO", "Aprovado (vai para a produção)"], ["FATURADO", "Faturado (depois da nota)"], ["CANCELADO", "Cancelado"]];
 
 /** Caminho completo de cada grupo ("Toalha › Algodão"), para mostrar o grupo pai. */
 async function groupPaths(tx: Tx): Promise<Opt[]> {
@@ -96,6 +100,39 @@ export const SIMPLE: Record<string, SEntity> = {
       { k: "o", label: "Pedidos", sql: sql`(select count(*)::int from sales_orders o where o.salesperson_id = salespeople.id)`, f: "num" }],
     uses: [[E.salesOrders, E.salesOrders.salespersonId, "Há pedidos com este vendedor. Marque como inativo em vez de excluir."], [E.partners, E.partners.salespersonId, "Há clientes ligados a este vendedor. Troque o vendedor deles ou marque como inativo."]],
     order: () => asc(E.salespeople.name),
+  },
+  "etapas-venda": {
+    mod: "comercial", table: t(E.salesStages), title: "Etapas do pedido de venda", sub: "Situações por onde o pedido passa. As quatro do sistema (Proposta, Aprovado, Faturado e Cancelado) não podem ser excluídas, mas você pode mudar o nome e a cor e criar outras, como “Em negociação” ou “Entregue”.", one: "etapa", fem: true, autoPos: true,
+    fields: [{ k: "name", label: "Nome da etapa", req: true }, { k: "position", label: "Ordem", t: "int", req: true },
+      { k: "kind", label: "Comportamento", t: "select", req: true, full: true, def: "APROVADO", opts: SO_KINDS, hint: "Define as regras: em Aprovado o pedido vai para a produção; em Faturado ele fica travado. Ex.: “Entregue” se comporta como Faturado." },
+      { k: "color", label: "Cor", t: "color", full: true, def: "#1E3A5F" }, { k: "active", label: "Etapa ativa", t: "check", def: true }],
+    cols: [{ k: "position", label: "Ordem", f: "num" }, { k: "name", label: "Etapa", f: "color" }, { k: "kind", label: "Comportamento", f: "opt" }, { k: "active", label: "Situação", f: "active" }],
+    counts: [{ k: "system", label: "Do sistema", sql: sql`sales_stages.system`, f: "active" }, { k: "n", label: "Pedidos", sql: sql`(select count(*)::int from sales_orders o where o.stage_id = sales_stages.id)`, f: "num" }],
+    uses: [[E.salesOrders, E.salesOrders.stageId, "Há pedidos nesta etapa. Mude a etapa deles antes de excluir, ou marque como inativa."]],
+    order: () => asc(E.salesStages.position),
+    check: async (tx, v, id) => {
+      if (!id) return null;
+      const [cur] = await tx.select().from(E.salesStages).where(eq(E.salesStages.id, id)).limit(1);
+      if (cur?.system && v.kind !== cur.kind) return "O comportamento das etapas do sistema não pode ser trocado. Crie uma etapa nova.";
+      if (cur?.system && v.active === false) return "As etapas do sistema não podem ser inativadas.";
+      if (cur && !cur.system && v.kind !== cur.kind) {
+        const [{ c }] = await tx.select({ c: sql<number>`count(*)::int` }).from(E.salesOrders).where(eq(E.salesOrders.stageId, id));
+        if (c) return "Há pedidos nesta etapa: o comportamento não pode ser trocado.";
+      }
+      return null;
+    },
+    guard: async (tx, id) => {
+      const [cur] = await tx.select({ system: E.salesStages.system }).from(E.salesStages).where(eq(E.salesStages.id, id)).limit(1);
+      return cur?.system ? "Esta etapa é do sistema e não pode ser excluída. Você pode mudar o nome e a cor." : null;
+    },
+  },
+  "locais-entrega": {
+    mod: "comercial", table: t(E.deliveryPlaces), title: "Locais de entrega e montagem", sub: "Endereços usados com frequência (obras, filiais do cliente, transportadoras). Aparecem na pesquisa do local de entrega do pedido e do local da montagem.", one: "local",
+    fields: [{ k: "name", label: "Nome", req: true, hint: "Ex.: Obra Residencial Atlântico" }, { k: "partnerId", label: "Cliente", t: "partner", hint: "Opcional: o local aparece primeiro nos pedidos deste cliente.",
+      opts: async (tx) => (await tx.select({ id: E.partners.id, n: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})` }).from(E.partners).where(sql`'Cliente' = any(${E.partners.kinds})`).orderBy(sql`2`)).map((r) => [r.id, r.n]) },
+      { k: "address", label: "Endereço", t: "textarea", full: true }, { k: "active", label: "Local ativo", t: "check", def: true }],
+    cols: [{ k: "name", label: "Local", f: "desc" }, { k: "address", label: "Endereço" }, { k: "partnerId", label: "Cliente", f: "opt" }, { k: "active", label: "Situação", f: "active" }],
+    order: () => asc(E.deliveryPlaces.name),
   },
   "campos-pedido": {
     mod: "comercial", table: t(E.customFields), title: "Campos personalizados do pedido", sub: "Campos extras que aparecem na sessão “Campos personalizados” do pedido de venda.", one: "campo", autoPos: true,

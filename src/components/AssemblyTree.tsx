@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Icon } from "./Icon";
 import { Modal, useRun } from "./client";
 import { ItemPicker } from "./ItemPicker";
+import { PlaceField, Sel } from "./SearchPicker";
 import { deleteLocationAction, deletePartAction, saveAssemblyAction, saveLocationAction, savePartAction, setLocationStageAction, setPartDoneAction } from "@/server/assembly-actions";
 
 type Opt = [string, string];
@@ -90,9 +91,9 @@ function LocModal({ loc, assemblyId, locs, stages, team, onClose }: { loc: Parti
       <div className="form">
         <div className="fld"><label htmlFor="l_n">Nome <span className="req">*</span></label><input id="l_n" value={d.name ?? ""} onChange={(e) => setD({ ...d, name: e.target.value })} autoFocus placeholder="Ex.: Apto 101, Cozinha, Veículo ABC1D23" /></div>
         <div className="fld"><label htmlFor="l_t">Tipo</label><select id="l_t" value={d.type ?? ""} onChange={(e) => setD({ ...d, type: e.target.value })}>{TIPOS.map((t) => <option key={t}>{t}</option>)}</select></div>
-        <div className="fld full"><label htmlFor="l_p">Fica dentro de</label><select id="l_p" value={d.parentId ?? ""} onChange={(e) => setD({ ...d, parentId: e.target.value || null })}><option value="">Primeiro nível</option>{locs.filter((l) => l.id !== d.id).map((l) => <option key={l.id} value={l.id}>{path(l)}</option>)}</select></div>
-        <div className="fld"><label htmlFor="l_i">Montador</label><select id="l_i" value={d.installerId ?? ""} onChange={(e) => setD({ ...d, installerId: e.target.value || null })}><option value="">Ninguém</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        <div className="fld"><label htmlFor="l_h">Auxiliar</label><select id="l_h" value={d.helperId ?? ""} onChange={(e) => setD({ ...d, helperId: e.target.value || null })}><option value="">Ninguém</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld full"><label htmlFor="l_p">Fica dentro de</label><Sel id="l_p" value={d.parentId ?? ""} onChange={(e) => setD({ ...d, parentId: e.target.value || null })}><option value="">Primeiro nível</option>{locs.filter((l) => l.id !== d.id).map((l) => <option key={l.id} value={l.id}>{path(l)}</option>)}</Sel></div>
+        <div className="fld"><label htmlFor="l_i">Montador</label><Sel id="l_i" value={d.installerId ?? ""} onChange={(e) => setD({ ...d, installerId: e.target.value || null })}><option value="">Ninguém</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+        <div className="fld"><label htmlFor="l_h">Auxiliar</label><Sel id="l_h" value={d.helperId ?? ""} onChange={(e) => setD({ ...d, helperId: e.target.value || null })}><option value="">Ninguém</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         <div className="fld"><label htmlFor="l_s">Etapa</label><select id="l_s" value={d.stageId ?? ""} onChange={(e) => setD({ ...d, stageId: e.target.value || null })}><option value="">Sem etapa</option>{stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}</select></div>
       </div>
     </Modal>
@@ -121,7 +122,7 @@ function PartModal({ assemblyId, locId, part, onClose }: { assemblyId: string; l
   );
 }
 
-export function AssemblyHeaderEdit({ a, team }: { a: { id: string; name: string; address: string | null; responsibleId: string | null; startDate: string | null; dueDate: string | null; notes: string | null }; team: Opt[] }) {
+export function AssemblyHeaderEdit({ a, team }: { a: { id: string; name: string; address: string | null; partnerId?: string | null; responsibleId: string | null; startDate: string | null; dueDate: string | null; notes: string | null }; team: Opt[] }) {
   const [open, setOpen] = useState(false);
   const [d, setD] = useState(a);
   const { run, pending } = useRun();
@@ -132,8 +133,8 @@ export function AssemblyHeaderEdit({ a, team }: { a: { id: string; name: string;
         foot={<><button type="button" className="btn" onClick={() => setOpen(false)}>Cancelar</button><button type="button" className="btn btn-primary" disabled={pending} onClick={() => run(() => saveAssemblyAction(d), () => setOpen(false))}>Salvar</button></>}>
         <div className="form">
           <div className="fld full"><label htmlFor="a_n">Nome</label><input id="a_n" value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} /></div>
-          <div className="fld full"><label htmlFor="a_e">Endereço ou local</label><input id="a_e" value={d.address ?? ""} onChange={(e) => setD({ ...d, address: e.target.value })} /></div>
-          <div className="fld"><label htmlFor="a_r">Responsável</label><select id="a_r" value={d.responsibleId ?? ""} onChange={(e) => setD({ ...d, responsibleId: e.target.value || null })}><option value="">Ninguém</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+          <PlaceField id="a_e" className="fld full" label="Local da montagem" value={d.address ?? ""} partnerId={a.partnerId} onChange={(v) => setD({ ...d, address: v })} />
+          <div className="fld"><label htmlFor="a_r">Responsável</label><Sel id="a_r" value={d.responsibleId ?? ""} onChange={(e) => setD({ ...d, responsibleId: e.target.value || null })}><option value="">Ninguém</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
           <div className="fld"><label htmlFor="a_i">Início</label><input id="a_i" type="date" value={d.startDate ?? ""} onChange={(e) => setD({ ...d, startDate: e.target.value })} /></div>
           <div className="fld"><label htmlFor="a_p">Previsão de término</label><input id="a_p" type="date" value={d.dueDate ?? ""} onChange={(e) => setD({ ...d, dueDate: e.target.value })} /></div>
           <div className="fld full"><label htmlFor="a_o">Observações</label><textarea id="a_o" rows={3} value={d.notes ?? ""} onChange={(e) => setD({ ...d, notes: e.target.value })} /></div>

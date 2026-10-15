@@ -68,12 +68,12 @@ export async function closedUntil(tx: Tx): Promise<string | null> {
   return r.rows[0]?.d ?? null;
 }
 
-export async function insertMovements(tx: Tx, tenantId: string, rows: (Omit<typeof E.stockMovements.$inferInsert, "tenantId">)[]) {
-  if (!rows.length) return;
+export async function insertMovements(tx: Tx, tenantId: string, rows: (Omit<typeof E.stockMovements.$inferInsert, "tenantId">)[]): Promise<{ id: string }[]> {
+  if (!rows.length) return [];
   const lock = await closedUntil(tx);
   const bad = lock && rows.find((r) => r.date <= lock);
   if (bad) throw new RuleError(`O estoque está fechado até ${lock.split("-").reverse().join("/")}. Use uma data posterior ao fechamento.`);
-  await tx.insert(E.stockMovements).values(rows.map((r) => ({ ...r, tenantId })));
+  return tx.insert(E.stockMovements).values(rows.map((r) => ({ ...r, tenantId }))).returning({ id: E.stockMovements.id });
 }
 
 /** Erro de regra de negócio com mensagem para o usuário. */
@@ -98,7 +98,7 @@ export function ruleMsg(err: unknown, fallback = "Não foi possível salvar. Ten
 // ------------------------------------------------------------------------------------
 // Cadastros padrão de cada empresa
 // ------------------------------------------------------------------------------------
-const DEFAULTS_VERSION = 1;
+const DEFAULTS_VERSION = 2;
 const done = new Set<string>();
 
 /** Cria (uma vez por empresa) os cadastros básicos para o sistema já sair usável. */
@@ -132,6 +132,9 @@ export async function ensureDefaults(tenantId: string): Promise<void> {
     ]);
     await ins(E.bankAccounts, [{ name: "Caixa da empresa", bank: "Caixa interno" }]);
     await ins(E.finSituations, [["Aguardando aprovação", "#C77700"], ["Aprovado para pagamento", "#2E7D4F"], ["Agendado", "#2F6E9A"]].map(([name, color]) => ({ name, color })));
+    await ins(E.salesStages, [["Proposta", "#6B7785", "PROPOSTA"], ["Aprovado", "#E0601A", "APROVADO"], ["Faturado", "#2E7D4F", "FATURADO"], ["Cancelado", "#B3261E", "CANCELADO"]]
+      .map(([name, color, kind], i) => ({ name, color, kind, position: i + 1, system: true })));
+    await tx.execute(sql`update sales_orders o set stage_id = s.id from sales_stages s where s.system and s.kind = o.status and o.stage_id is null`);
     if (cs) await tx.update(E.companySettings).set({ defaultsVersion: DEFAULTS_VERSION }).where(eq(E.companySettings.id, cs.id));
     else await tx.insert(E.companySettings).values({ tenantId, defaultsVersion: DEFAULTS_VERSION });
   });
@@ -168,4 +171,17 @@ export async function companyHeader(tx: Tx, fallbackName: string) {
 
 export function partnerAddress(p: { street: string | null; number: string | null; district: string | null; city: string | null; uf: string | null; zip: string | null }) {
   return [p.street && `${p.street}${p.number ? ", " + p.number : ""}`, p.district, p.city && `${p.city}/${p.uf ?? ""}`, p.zip && `CEP ${p.zip}`].filter(Boolean).join(" · ");
+}
+
+// ------------------------------------------------------------------------------------
+// Etapas do pedido de venda
+// ------------------------------------------------------------------------------------
+/** Etapa que o pedido deve ter para a situação: mantém a atual se ela já tem esse comportamento. */
+export async function stageIdFor(tx: Tx, status: string, current?: string | null): Promise<string | null> {
+  if (current) {
+    const [cur] = await tx.select({ kind: E.salesStages.kind }).from(E.salesStages).where(eq(E.salesStages.id, current)).limit(1);
+    if (cur?.kind === status) return current;
+  }
+  const [st] = await tx.select({ id: E.salesStages.id }).from(E.salesStages).where(and(eq(E.salesStages.kind, status), eq(E.salesStages.system, true))).limit(1);
+  return st?.id ?? null;
 }

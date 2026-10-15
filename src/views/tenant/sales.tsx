@@ -9,9 +9,11 @@ import { ActionButton, ClickRow, FilterBar, FilterTabs } from "@/components/clie
 import { Icon } from "@/components/Icon";
 import { SalesOrderEditor, type SOData } from "@/components/SalesOrderEditor";
 import { Attachments } from "@/components/Attachments";
+import { NotifyButton } from "@/components/Comm";
 import { deleteSalesOrderAction, duplicateSalesOrderAction, setSalesStatusAction } from "@/server/sales-actions";
 import { companyHeader, loadAttachments, partnerAddress } from "@/server/common";
-import { salesWhere } from "@/server/queries";
+import { salesWhere, SO_STAGE } from "@/server/queries";
+import { Sel } from "@/components/SearchPicker";
 import { DocReport } from "@/components/DocReport";
 import { fmtMoney } from "@/lib/format";
 import { docTotals, fmtD, isDate, today } from "@/lib/dates";
@@ -31,17 +33,22 @@ export async function SalesList({ searchParams }: { searchParams: Promise<SP> })
       o: E.salesOrders, cli: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})`,
       first: sql<string | null>`(select i.name from sales_order_items si join items i on i.id = si.item_id where si.order_id = "sales_orders"."id" order by si.position limit 1)`,
       nitems: sql<number>`(select count(*)::int from sales_order_items si where si.order_id = "sales_orders"."id")`,
-      pm: E.paymentMethods.name, pt: E.paymentTerms.name,
+      pm: E.paymentMethods.name, pt: E.paymentTerms.name, stage: sql<string | null>`${SO_STAGE}`,
     }).from(E.salesOrders).innerJoin(E.partners, eq(E.partners.id, E.salesOrders.partnerId))
       .leftJoin(E.paymentMethods, eq(E.paymentMethods.id, E.salesOrders.paymentMethodId)).leftJoin(E.paymentTerms, eq(E.paymentTerms.id, E.salesOrders.paymentTermId))
       .where(where).orderBy(desc(E.salesOrders.number)).limit(PAGE).offset((pg - 1) * PAGE);
     const [{ total, sum }] = await tx.select({ total: sql<number>`count(*)::int`, sum: sql<string>`coalesce(sum(${E.salesOrders.total}),0)::text` }).from(E.salesOrders).where(where);
-    const counts = await tx.select({ st: E.salesOrders.status, n: sql<number>`count(*)::int` }).from(E.salesOrders).where(base).groupBy(E.salesOrders.status);
+    const counts = await tx.select({ st: E.salesOrders.status, stage: sql<string | null>`${SO_STAGE}`, n: sql<number>`count(*)::int` }).from(E.salesOrders).where(base).groupBy(E.salesOrders.status, sql`2`);
+    const stages = await tx.select().from(E.salesStages).orderBy(asc(E.salesStages.position));
     const clients = await tx.select({ id: E.partners.id, n: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})` }).from(E.partners).where(sql`'Cliente' = any(${E.partners.kinds})`).orderBy(sql`2`);
-    return { rows, total, sum, counts, clients };
+    return { rows, total, sum, counts, clients, stages };
   });
   const sellers = await s.tx((tx) => tx.select({ id: E.salespeople.id, n: E.salespeople.name }).from(E.salespeople).orderBy(asc(E.salespeople.name)));
-  const cnt = (st: string) => (st ? d.counts.find((c) => c.st === st)?.n ?? 0 : d.counts.reduce((a, c) => a + c.n, 0));
+  const cnt = (st: string) => d.counts.filter((c) => !st || c.st === st).reduce((a, c) => a + c.n, 0);
+  const cntStage = (id: string) => d.counts.filter((c) => c.stage === id).reduce((a, c) => a + c.n, 0);
+  const stageOf = (id: string | null) => d.stages.find((x) => x.id === id);
+  // etapas ativas, e as inativas que ainda têm pedidos
+  const tabStages = d.stages.filter((x) => x.active || cntStage(x.id) > 0);
   const moreActive = ["vend", "local", "item", "prod"].filter((k) => sp[k]).length;
   const hoje = today();
   const csv = `/api/export/pedidos?${new URLSearchParams(Object.entries(sp).filter(([k, v]) => v && k !== "p") as [string, string][])}`;
@@ -50,16 +57,16 @@ export async function SalesList({ searchParams }: { searchParams: Promise<SP> })
       <PageHead title="Pedidos de venda" sub="Propostas e pedidos com itens, descontos, prazos e condições de pagamento. Ao aprovar, o pedido vai para a fila da produção, que decide se gera ordem de produção."
         actions={<><a className="btn" href={csv}><Icon name="download" size={16} /> Exportar CSV</a>{s.edit && <BtnLink href="/pedidos/novo" primary icon="plus">Nova proposta</BtnLink>}</>} />
       <FilterBar moreActive={moreActive} right={<span className="count">{d.total} pedidos · {fmtMoney(d.sum)}</span>}
-        tabs={<FilterTabs name="st" value={sp.st ?? ""} options={[{ v: "", label: "Em aberto", n: cnt("PROPOSTA") + cnt("APROVADO") }, { v: "PROPOSTA", label: "Propostas", n: cnt("PROPOSTA") }, { v: "APROVADO", label: "Aprovados", n: cnt("APROVADO") },
-          { v: "FATURADO", label: "Faturados", n: cnt("FATURADO") }, { v: "CANCELADO", label: "Cancelados", n: cnt("CANCELADO") }, { v: "todos", label: "Todos", n: cnt("") }]} />}
+        tabs={<FilterTabs name="st" value={sp.st ?? ""} options={[{ v: "", label: "Em aberto", n: cnt("PROPOSTA") + cnt("APROVADO") },
+          ...tabStages.map((x) => ({ v: x.id, label: x.name, n: cntStage(x.id) })), { v: "todos", label: "Todos", n: cnt("") }]} />}
         more={<>
-          <select name="vend" defaultValue={sp.vend ?? ""} aria-label="Vendedor"><option value="">Todos os vendedores</option>{sellers.map((u) => <option key={u.id} value={u.id}>{u.n}</option>)}</select>
+          <Sel name="vend" defaultValue={sp.vend ?? ""} aria-label="Vendedor"><option value="">Todos os vendedores</option>{sellers.map((u) => <option key={u.id} value={u.id}>{u.n}</option>)}</Sel>
           <label className="fl">Local de entrega <input type="text" name="local" defaultValue={sp.local ?? ""} /></label>
           <label className="fl">Produto <input type="text" name="item" defaultValue={sp.item ?? ""} placeholder="código ou descrição" /></label>
           <select name="prod" defaultValue={sp.prod ?? ""} aria-label="Produção"><option value="">Produção: todas</option>{Object.entries(PROD_STATUS).map(([v, x]) => <option key={v} value={v}>{x.label}</option>)}</select>
         </>}>
         <input type="text" name="num" defaultValue={sp.num ?? ""} placeholder="Nº do pedido" aria-label="Número do pedido" style={{ width: 120 }} inputMode="numeric" />
-        <select name="cli" defaultValue={sp.cli ?? ""} aria-label="Cliente" style={{ maxWidth: 230 }}><option value="">Todos os clientes</option>{d.clients.map((c) => <option key={c.id} value={c.id}>{c.n}</option>)}</select>
+        <Sel name="cli" defaultValue={sp.cli ?? ""} aria-label="Cliente" style={{ maxWidth: 230 }}><option value="">Todos os clientes</option>{d.clients.map((c) => <option key={c.id} value={c.id}>{c.n}</option>)}</Sel>
         <label className="fl">Emissão de <input type="date" name="de" defaultValue={sp.de ?? ""} /></label>
         <label className="fl">até <input type="date" name="ate" defaultValue={sp.ate ?? ""} /></label>
         <label className="fl">Entrega de <input type="date" name="ent_de" defaultValue={sp.ent_de ?? ""} /></label>
@@ -68,8 +75,10 @@ export async function SalesList({ searchParams }: { searchParams: Promise<SP> })
       <div className="tbl">
         {d.rows.length ? (
           <table>
-            <thead><tr><th className="num">Nº</th><th>Emissão</th><th>Cliente</th><th>Itens</th><th>Entrega</th><th className="num">Total</th><th>Pagamento</th><th>Situação</th><th>Produção</th></tr></thead>
-            <tbody>{d.rows.map(({ o, cli, first, nitems, pm, pt }) => {
+            <thead><tr><th className="num">Nº</th><th>Emissão</th><th>Cliente</th><th>Itens</th><th>Entrega</th><th className="num">Total</th><th>Pagamento</th><th>Etapa</th><th>Produção</th>
+              <th data-hide="">Vendedor</th><th data-hide="">Local de entrega</th><th data-hide="">Montagem</th><th data-hide="">Previsão de entrega</th></tr></thead>
+            <tbody>{d.rows.map(({ o, cli, first, nitems, pm, pt, stage }) => {
+              const sg = stageOf(stage);
               const late = o.deliveryDate && o.deliveryDate < hoje && o.status === "APROVADO";
               return (
                 <ClickRow key={o.id} href={`/pedidos/${o.id}`}>
@@ -79,12 +88,14 @@ export async function SalesList({ searchParams }: { searchParams: Promise<SP> })
                     {o.deliveryPlace && o.deliveryPlace !== "Retira na fábrica" && <div className="t-sub ell" style={{ maxWidth: 110 }} title={o.deliveryPlace}>{o.deliveryPlace}</div>}</td>
                   <td className="num"><b>{fmtMoney(o.total)}</b></td>
                   <td style={{ fontSize: 12.5 }}>{pm ?? ""}<div className="muted">{pt ?? ""}</div></td>
-                  <td><StatusBadge color={SO_STATUS[o.status]?.color ?? "#6B7785"} label={SO_STATUS[o.status]?.label ?? o.status} /></td>
+                  <td><StatusBadge color={sg?.color ?? SO_STATUS[o.status]?.color ?? "#6B7785"} label={sg?.name ?? SO_STATUS[o.status]?.label ?? o.status} /></td>
                   <td>{o.productionStatus ? <span className="badge" style={{ color: PROD_STATUS[o.productionStatus]?.color }}>{PROD_STATUS[o.productionStatus]?.label}</span> : <span className="muted">—</span>}</td>
+                  <td>{o.salespersonName ?? "—"}</td><td className="wrap" style={{ maxWidth: 220, fontSize: 12.5 }}>{o.deliveryPlace ?? "—"}</td>
+                  <td>{o.hasAssembly ? <span className="badge">Com montagem</span> : <span className="muted">Não</span>}</td><td className="code">{fmtD(o.deliveryDate)}</td>
                 </ClickRow>
               );
             })}</tbody>
-            <tfoot><tr><td colSpan={5}>Total</td><td className="num">{fmtMoney(d.sum)}</td><td colSpan={3} /></tr></tfoot>
+            <tfoot><tr><td colSpan={5}>Total</td><td className="num">{fmtMoney(d.sum)}</td><td colSpan={7} /></tr></tfoot>
           </table>
         ) : <Empty title="Nenhum pedido neste filtro">Ajuste a busca ou os filtros, ou crie uma nova proposta.</Empty>}
         <Pager page={pg} pages={Math.max(1, Math.ceil(d.total / PAGE))} qs={pageLink(sp)} />
@@ -106,13 +117,14 @@ async function editorOptions(s: PageCtx) {
     methods: await tx.select({ id: E.paymentMethods.id, n: E.paymentMethods.name }).from(E.paymentMethods).where(eq(E.paymentMethods.active, true)).orderBy(asc(E.paymentMethods.name)),
     terms: await tx.select({ id: E.paymentTerms.id, name: E.paymentTerms.name, days: E.paymentTerms.days }).from(E.paymentTerms).where(eq(E.paymentTerms.active, true)).orderBy(asc(E.paymentTerms.name)),
     fields: await tx.select().from(E.customFields).where(and(eq(E.customFields.entity, "sales_order"), eq(E.customFields.active, true))).orderBy(asc(E.customFields.position)),
+    stages: await tx.select({ id: E.salesStages.id, name: E.salesStages.name, color: E.salesStages.color, kind: E.salesStages.kind }).from(E.salesStages).where(eq(E.salesStages.active, true)).orderBy(asc(E.salesStages.position)),
   }));
   // vendedores: cadastro próprio em Comercial › Configurações › Vendedores
   const sellers = await s.tx((tx) => tx.select({ id: E.salespeople.id, n: E.salespeople.name }).from(E.salespeople).where(eq(E.salespeople.active, true)).orderBy(asc(E.salespeople.name)));
   return {
     sellers: sellers.map((u) => [u.id, u.n] as [string, string]),
     methods: o.methods.map((m) => [m.id, m.n] as [string, string]),
-    terms: o.terms,
+    terms: o.terms, stages: o.stages,
     fields: o.fields.map((f) => ({ id: f.id, label: f.label, type: f.type, options: f.options, required: f.required })),
   };
 }
@@ -123,7 +135,7 @@ export async function SalesNew({ searchParams }: { searchParams: Promise<SP> }) 
   const o = await editorOptions(s);
   const cli = sp.cliente ? await partnerRef(s, sp.cliente) : null;
   const data: SOData = {
-    status: "PROPOSTA", productionStatus: null, partnerId: cli?.id ?? "", partnerLabel: cli?.label ?? "", salespersonId: cli?.salespersonId ?? "", issueDate: today(), deliveryDate: "", deliveryPlace: cli?.place ?? "",
+    status: "PROPOSTA", stageId: o.stages.find((x) => x.kind === "PROPOSTA")?.id ?? "", hasAssembly: false, productionStatus: null, partnerId: cli?.id ?? "", partnerLabel: cli?.label ?? "", salespersonId: cli?.salespersonId ?? "", issueDate: today(), deliveryDate: "", deliveryPlace: cli?.place ?? "",
     paymentMethodId: o.methods.find(([, n]) => n === "Boleto")?.[0] ?? "", paymentTermId: "", installments: [], discount: 0, freight: 0, notes: "", internalNotes: "", custom: {}, lines: [],
   };
   return (
@@ -150,20 +162,27 @@ export async function SalesEdit({ params }: { params: Promise<{ id: string }> })
   });
   if (!d) notFound();
   const { so } = d;
+  // etapa inativa em que o pedido está continua aparecendo
+  if (so.stageId && !o.stages.some((x) => x.id === so.stageId)) {
+    const [st] = await s.tx((tx) => tx.select({ id: E.salesStages.id, name: E.salesStages.name, color: E.salesStages.color, kind: E.salesStages.kind }).from(E.salesStages).where(eq(E.salesStages.id, so.stageId!)));
+    if (st) o.stages.push(st);
+  }
   // vendedor antigo (ou inativo) continua aparecendo no pedido
   if (so.salespersonId && !o.sellers.some(([v]) => v === so.salespersonId)) o.sellers.unshift([so.salespersonId, so.salespersonName ?? "Vendedor"]);
   const data: SOData = {
-    id: so.id, number: so.number, status: so.status, productionStatus: so.productionStatus, partnerId: so.partnerId, partnerLabel: d.p ? (d.p.trade || d.p.name) : "", salespersonId: so.salespersonId ?? "",
+    id: so.id, number: so.number, status: so.status, stageId: so.stageId ?? "", hasAssembly: so.hasAssembly, productionStatus: so.productionStatus, partnerId: so.partnerId, partnerLabel: d.p ? (d.p.trade || d.p.name) : "", salespersonId: so.salespersonId ?? "",
     issueDate: so.issueDate, deliveryDate: so.deliveryDate ?? "", deliveryPlace: so.deliveryPlace ?? "", paymentMethodId: so.paymentMethodId ?? "", paymentTermId: so.paymentTermId ?? "",
     installments: so.installments, discount: Number(so.discount), freight: Number(so.freight), notes: so.notes ?? "", internalNotes: so.internalNotes ?? "", custom: so.custom,
     lines: d.lines.map(({ l, i }) => ({ key: l.id, itemId: i.id, code: i.code, name: i.name, unit: i.unit, qty: Number(l.qty), price: Number(l.price), discountPct: Number(l.discountPct), notes: l.notes ?? "" })),
   };
-  const st = SO_STATUS[so.status];
+  const sg = o.stages.find((x) => x.id === so.stageId) ?? o.stages.find((x) => x.kind === so.status);
+  const st = sg ? { label: sg.name, color: sg.color } : SO_STATUS[so.status];
   const nfOk = d.nfs.filter((n) => n.status === "EMITIDA");
   return (
     <>
       <PageHead title={`${so.status === "PROPOSTA" ? "Proposta" : "Pedido"} de venda nº ${so.number}`} back={{ href: "/pedidos", label: "Pedidos de venda" }}
         actions={<>
+          <NotifyButton link={`/pedidos/${so.id}`} label={`Pedido ${so.number}`} suggest={`Revisar o pedido de venda ${so.number}`} />
           <BtnLink href={`/pedidos/${so.id}/imprimir`} icon="print">Imprimir</BtnLink>
           {s.edit && <ActionButton className="btn" action={duplicateSalesOrderAction.bind(null, so.id)}><Icon name="copy" size={16} /> Duplicar</ActionButton>}
           {s.edit && so.status === "CANCELADO" && <ActionButton className="btn" action={setSalesStatusAction.bind(null, so.id, "PROPOSTA")}>Reabrir como proposta</ActionButton>}

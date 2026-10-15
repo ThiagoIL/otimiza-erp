@@ -1,4 +1,5 @@
 import { and, asc, eq, gte, ilike, lte, or, sql, type SQL } from "drizzle-orm";
+import { Sel } from "@/components/SearchPicker";
 import { page, type PageCtx } from "@/lib/access";
 import * as E from "@/db/erp";
 import { Empty, Kpi, PageHead, Panel } from "@/components/ui";
@@ -80,17 +81,17 @@ export async function TitlesPage({ kind, searchParams }: { kind: "RECEBER" | "PA
       <FilterBar moreActive={moreActive} right={<span className="count">{d.rows.length} lançamentos</span>}
         tabs={<FilterTabs name="st" value={st === "aberto" ? "" : st} options={[{ v: "", label: "Em aberto" }, { v: "vencido", label: "Vencidas" }, { v: "pago", label: R ? "Recebidas" : "Pagas" }, { v: "cancelado", label: "Canceladas" }, { v: "todas", label: "Todas" }]} />}
         more={<>
-          <select name="sit" defaultValue={sp.sit ?? ""} aria-label="Situação"><option value="">Qualquer situação</option>{o.situations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-          <select name="resp" defaultValue={sp.resp ?? ""} aria-label="Responsável"><option value="">Qualquer responsável</option>{o.responsibles.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-          <select name="forma" defaultValue={sp.forma ?? ""} aria-label="Forma"><option value="">Qualquer forma</option>{o.methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-          <select name="conta" defaultValue={sp.conta ?? ""} aria-label="Conta"><option value="">Qualquer conta</option>{o.accounts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          <Sel name="sit" defaultValue={sp.sit ?? ""} aria-label="Situação"><option value="">Qualquer situação</option>{o.situations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel>
+          <Sel name="resp" defaultValue={sp.resp ?? ""} aria-label="Responsável"><option value="">Qualquer responsável</option>{o.responsibles.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel>
+          <Sel name="forma" defaultValue={sp.forma ?? ""} aria-label="Forma"><option value="">Qualquer forma</option>{o.methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel>
+          <Sel name="conta" defaultValue={sp.conta ?? ""} aria-label="Conta"><option value="">Qualquer conta</option>{o.accounts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel>
           <select name="origem" defaultValue={sp.origem ?? ""} aria-label="Origem"><option value="">Qualquer origem</option><option value="MANUAL">Lançamento manual</option><option value={R ? "NF" : "PC"}>{R ? "Nota fiscal" : "Pedido de compra"}</option></select>
           <label className="fl">{R ? "Recebido" : "Pago"} de <input type="date" name="pg_de" defaultValue={sp.pg_de ?? ""} /></label>
           <label className="fl">até <input type="date" name="pg_ate" defaultValue={sp.pg_ate ?? ""} /></label>
         </>}>
         <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={sp.q ?? ""} placeholder={`Descrição, documento ou ${R ? "cliente" : "fornecedor"}`} aria-label="Buscar" /></div>
-        <select name="parc" defaultValue={sp.parc ?? ""} aria-label={R ? "Cliente" : "Fornecedor"} style={{ maxWidth: 220 }}><option value="">{R ? "Todos os clientes" : "Todos os fornecedores"}</option>{o.partners.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
-        <select name="cat" defaultValue={sp.cat ?? ""} aria-label="Categoria"><option value="">Todas as categorias</option>{o.categories.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        <Sel name="parc" defaultValue={sp.parc ?? ""} aria-label={R ? "Cliente" : "Fornecedor"} style={{ maxWidth: 220 }}><option value="">{R ? "Todos os clientes" : "Todos os fornecedores"}</option>{o.partners.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel>
+        <Sel name="cat" defaultValue={sp.cat ?? ""} aria-label="Categoria"><option value="">Todas as categorias</option>{o.categories.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel>
         <label className="fl">Vence de <input type="date" name="de" defaultValue={sp.de ?? ""} /></label>
         <label className="fl">até <input type="date" name="ate" defaultValue={sp.ate ?? ""} /></label>
       </FilterBar>
@@ -182,7 +183,7 @@ export async function StatementPage({ searchParams }: { searchParams: Promise<SP
       <PageHead title="Extrato" sub="Movimento de cada conta: recebimentos e pagamentos baixados nela e lançamentos avulsos (tarifas, transferências, ajustes), com o saldo dia a dia."
         actions={<>{acc && <a className="btn" href={`/api/export/fin-extrato?conta=${accId}&de=${de}&ate=${ate}`}><Icon name="download" size={16} /> Exportar CSV</a>}{s.edit && acc && <BankButtons accountId={accId} accounts={o.accounts} />}</>} />
       <FilterBar right={acc && <span className="count">{d?.lines.length ?? 0} lançamentos</span>}>
-        <select name="conta" defaultValue={accId} aria-label="Conta">{o.raw.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select>
+        <Sel name="conta" defaultValue={accId} aria-label="Conta">{o.raw.accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Sel>
         <label className="fl">De <input type="date" name="de" defaultValue={de} /></label>
         <label className="fl">até <input type="date" name="ate" defaultValue={ate} /></label>
       </FilterBar>
@@ -231,7 +232,7 @@ export async function ReportsPage() {
               <div className="fld"><label>{r.period === "venc" ? "Vencimento de" : "Data de"}</label><input type="date" name="de" defaultValue={ini} /></div>
               <div className="fld"><label>até</label><input type="date" name="ate" defaultValue={today()} /></div>
             </div>}
-            {r.extra === "conta" && <div className="fld"><label>Conta</label><select name="conta">{o.accounts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
+            {r.extra === "conta" && <div className="fld"><label>Conta</label><Sel name="conta">{o.accounts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>}
             {r.period === "venc" && <div className="fld"><label>Situação</label><select name="st"><option value="">Todas</option><option value="aberto">Em aberto</option><option value="vencido">Vencidas</option><option value="pago">Baixadas</option></select></div>}
             <div className="acts"><button type="submit" className="btn btn-primary"><Icon name="download" size={16} /> Baixar CSV</button></div>
           </form>

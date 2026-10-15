@@ -4,12 +4,12 @@ import { useRouter } from "next/navigation";
 import { Icon } from "./Icon";
 import { ActionButton, Modal, useRun } from "./client";
 import { ItemPicker } from "./ItemPicker";
-import { PickField } from "./SearchPicker";
+import { PickField, PlaceField, Sel } from "./SearchPicker";
 import { searchPartnersAction } from "@/server/search-actions";
 import { toast } from "./Toast";
 import {
   addComponentsAction, createAssemblyFromOpAction, generateOpsAction, moveOpAction, noProductionAction, removeComponentAction, reportOutputAction,
-  requisitionAction, saveOpAction, setComponentDoneAction,
+  requisitionAction, saveOpAction, setComponentDoneAction, setComponentSupplyAction,
 } from "@/server/production-actions";
 import { PRIORITIES } from "@/lib/consts";
 import { fmtD, today } from "@/lib/dates";
@@ -45,8 +45,8 @@ export function QueueActions({ order, centers, team }: { order: QueueOrder; cent
                 <td><input type="number" min={0} step="any" value={sel[i].qty} onChange={(e) => setSel({ ...sel, [i]: { ...sel[i], qty: Number(e.target.value) || 0 } })} aria-label="Quantidade" /></td></tr>))}</tbody>
           </table></div>
           <div className="form f4" style={{ marginTop: 14 }}>
-            <div className="fld"><label htmlFor="g_c">Centro de trabalho</label><select id="g_c" value={f.workCenterId} onChange={(e) => setF({ ...f, workCenterId: e.target.value })}><option value="">Nenhum</option>{centers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-            <div className="fld"><label htmlFor="g_r">Responsável</label><select id="g_r" value={f.responsibleId} onChange={(e) => setF({ ...f, responsibleId: e.target.value })}><option value="">Nenhum</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+            <div className="fld"><label htmlFor="g_c">Centro de trabalho</label><Sel id="g_c" value={f.workCenterId} onChange={(e) => setF({ ...f, workCenterId: e.target.value })}><option value="">Nenhum</option>{centers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+            <div className="fld"><label htmlFor="g_r">Responsável</label><Sel id="g_r" value={f.responsibleId} onChange={(e) => setF({ ...f, responsibleId: e.target.value })}><option value="">Nenhum</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
             <div className="fld"><label htmlFor="g_p">Prioridade</label><select id="g_p" value={f.priority} onChange={(e) => setF({ ...f, priority: e.target.value })}>{Object.keys(PRIORITIES).map((p) => <option key={p}>{p}</option>)}</select></div>
             <div className="fld"><label htmlFor="g_n">Data de necessidade</label><input id="g_n" type="date" value={f.needDate} onChange={(e) => setF({ ...f, needDate: e.target.value })} /></div>
           </div>
@@ -117,19 +117,19 @@ export function OpHeader({ op, orders, clients, centers, team, stages, canEdit }
       <div className="form f4">
         <div className="fld span2"><span className="flabel">Produto a produzir <span className="req">*</span></span>
           <div style={{ display: "flex", gap: 8 }}><input value={d.itemLabel} readOnly placeholder="Escolha o produto" onClick={() => !ro && setPick(true)} aria-label="Produto" style={{ cursor: ro ? "default" : "pointer" }} />
-            {!ro && <button type="button" className="btn" onClick={() => setPick(true)}><Icon name="search" size={15} /> Pesquisar</button>}</div>
+            {!ro && <button type="button" className="btn btn-icon pick-btn" onClick={() => setPick(true)} title="Pesquisar produto" aria-label="Pesquisar produto"><Icon name="search" size={15} /></button>}</div>
           {op.id && <small>Trocar o produto refaz a estrutura da OP (só é possível antes de apontar).</small>}
         </div>
         <div className="fld"><label htmlFor="op_q">Quantidade <span className="req">*</span></label><input id="op_q" type="number" min={0} step="any" value={d.qty} disabled={ro} onChange={(e) => set({ qty: Number(e.target.value) || 0 })} /></div>
         <div className="fld"><label htmlFor="op_p">Prioridade</label><select id="op_p" value={d.priority} disabled={ro} onChange={(e) => set({ priority: e.target.value })}>{Object.keys(PRIORITIES).map((p) => <option key={p}>{p}</option>)}</select></div>
-        <div className="fld span2"><label htmlFor="op_o">Pedido de venda</label><select id="op_o" value={d.salesOrderId} disabled={ro} onChange={(e) => set({ salesOrderId: e.target.value })}><option value="">Sem pedido (produção para estoque)</option>{orders.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld span2"><label htmlFor="op_o">Pedido de venda</label><Sel id="op_o" value={d.salesOrderId} disabled={ro} onChange={(e) => set({ salesOrderId: e.target.value })}><option value="">Sem pedido (produção para estoque)</option>{orders.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         <PickField id="op_c" className="fld span2" label="Cliente" disabled={ro || !!d.salesOrderId} emptyText={d.salesOrderId ? "O do pedido" : "Nenhum (produção para estoque)"}
           value={d.partnerId ? { id: d.partnerId, label: clients.find(([v]) => v === d.partnerId)?.[1] ?? d.partnerLabel ?? "" } : null}
           onChange={(r) => set({ partnerId: r?.id ?? "", partnerLabel: r?.label ?? "" })}
           picker={{ title: "Pesquisar cliente", fetcher: searchPartnersAction, filter: "Cliente", lockFilter: true, placeholder: "Nome, fantasia, CNPJ/CPF ou cidade", columns: ["Nome", "Razão social", "CNPJ/CPF", "Cidade", "Telefone"] }} />
         {stages && !op.id && <div className="fld"><label htmlFor="op_s">Etapa inicial</label><select id="op_s" value={d.stageId ?? ""} onChange={(e) => set({ stageId: e.target.value })}>{stages.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
-        <div className="fld"><label htmlFor="op_wc">Centro de trabalho</label><select id="op_wc" value={d.workCenterId} disabled={ro} onChange={(e) => set({ workCenterId: e.target.value })}><option value="">Nenhum</option>{centers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        <div className="fld"><label htmlFor="op_r">Responsável</label><select id="op_r" value={d.responsibleId} disabled={ro} onChange={(e) => set({ responsibleId: e.target.value })}><option value="">Nenhum</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld"><label htmlFor="op_wc">Centro de trabalho</label><Sel id="op_wc" value={d.workCenterId} disabled={ro} onChange={(e) => set({ workCenterId: e.target.value })}><option value="">Nenhum</option>{centers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+        <div className="fld"><label htmlFor="op_r">Responsável</label><Sel id="op_r" value={d.responsibleId} disabled={ro} onChange={(e) => set({ responsibleId: e.target.value })}><option value="">Nenhum</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         <div className="fld"><label htmlFor="op_i">Início previsto</label><input id="op_i" type="date" value={d.startDate} disabled={ro} onChange={(e) => set({ startDate: e.target.value })} /></div>
         <div className="fld"><label htmlFor="op_n">Data de necessidade</label><input id="op_n" type="date" value={d.needDate} disabled={ro} onChange={(e) => set({ needDate: e.target.value })} /></div>
         <div className="fld full"><label htmlFor="op_obs">Observações</label><textarea id="op_obs" rows={2} value={d.notes} disabled={ro} onChange={(e) => set({ notes: e.target.value })} /></div>
@@ -146,7 +146,7 @@ export function OpHeader({ op, orders, clients, centers, team, stages, canEdit }
 }
 
 // ------------------------------------------------------------------ Estrutura da OP
-export type CompRow = { id: string; itemId: string | null; code: string | null; name: string; unit: string; required: number; done: number; withdrawn: number; fromBom: boolean };
+export type CompRow = { id: string; itemId: string | null; code: string | null; name: string; unit: string; required: number; done: number; withdrawn: number; fromBom: boolean; supply: string };
 export function OpStructure({ opId, rows, canEdit }: { opId: string; rows: CompRow[]; canEdit: boolean }) {
   const [vals, setVals] = useState<Record<string, string>>({});
   const [pick, setPick] = useState(false);
@@ -161,7 +161,7 @@ export function OpStructure({ opId, rows, canEdit }: { opId: string; rows: CompR
         {canEdit && <span style={{ marginLeft: "auto", display: "flex", gap: 6 }}><button type="button" className="btn btn-sm" onClick={() => setPick(true)}><Icon name="plus" size={14} /> Incluir itens</button></span>}</h2>
       <div className="tbl solo" style={{ border: 0, borderRadius: 0, maxHeight: "none" }}>
         <table className="pecas" style={{ margin: 0, width: "100%" }}>
-          <thead><tr><th className="chk-cell" /><th>Item</th><th className="num">Necessário</th><th className="num">Retirado do estoque</th><th className="num" style={{ width: 210 }}>Apontado como feito</th><th /></tr></thead>
+          <thead><tr><th className="chk-cell" /><th>Item</th><th style={{ width: 170 }}>Operação</th><th className="num">Necessário</th><th className="num">Retirado do estoque</th><th className="num" style={{ width: 210 }}>Pronto / apontado</th><th /></tr></thead>
           <tbody>{rows.length ? rows.map((r) => {
             const ok = r.done >= r.required - 1e-9;
             const v = vals[r.id];
@@ -169,8 +169,11 @@ export function OpStructure({ opId, rows, canEdit }: { opId: string; rows: CompR
               <tr key={r.id} className={ok ? "done" : ""}>
                 <td>{canEdit ? <button type="button" className={`ck${ok ? " on" : ""}`} aria-label={ok ? "Desmarcar" : "Marcar como feito"} onClick={() => save(r, ok ? 0 : r.required)}><Icon name="check" size={13} /></button> : <span className={`ck${ok ? " on" : ""}`}><Icon name="check" size={13} /></span>}</td>
                 <td className="pd">{r.name}{r.code && <span className="muted"> · {r.code}</span>}{!r.fromBom && <span className="badge" style={{ marginLeft: 6 }}>incluído</span>}</td>
+                <td>{canEdit ? <select value={r.supply} className={r.supply === "FABRICADO" ? "sup-fab" : "sup-est"} aria-label="Operação" disabled={pending} onChange={(e) => run(() => setComponentSupplyAction(r.id, e.target.value as "ESTOQUE"))}>
+                  <option value="FABRICADO">Fabricado na OP</option><option value="ESTOQUE">Retirada do estoque</option></select>
+                  : <span className={`badge ${r.supply === "FABRICADO" ? "sup-fab" : "sup-est"}`}>{r.supply === "FABRICADO" ? "Fabricado" : "Do estoque"}</span>}</td>
                 <td className="num">{qf(r.required)} {r.unit}</td>
-                <td className={`num${r.itemId && r.withdrawn + 1e-9 < r.required ? " t-warn" : ""}`}>{r.itemId ? qf(r.withdrawn) : "—"}</td>
+                <td className={`num${r.supply === "ESTOQUE" && r.itemId && r.withdrawn + 1e-9 < r.required ? " t-warn" : ""}`}>{r.itemId && r.supply === "ESTOQUE" ? qf(r.withdrawn) : "—"}</td>
                 <td className="num">{canEdit ? <span className="qty-edit"><input value={v ?? String(r.done)} inputMode="decimal" onChange={(e) => setVals({ ...vals, [r.id]: e.target.value })}
                   onKeyDown={(e) => { if (e.key === "Enter") save(r, Number((v ?? "").replace(",", ".")) || 0); }} aria-label="Quantidade feita" />
                   {v != null && <button type="button" className="mini-btn" title="Salvar" disabled={pending} onClick={() => save(r, Number(v.replace(",", ".")) || 0)}><Icon name="check" size={13} /></button>}
@@ -178,7 +181,7 @@ export function OpStructure({ opId, rows, canEdit }: { opId: string; rows: CompR
                 <td className="acts show">{canEdit && <ActionButton className="mini-btn danger" title="Remover da OP" confirm="Remover este item da estrutura da OP?" action={() => removeComponentAction(r.id)}><Icon name="trash" size={12} /></ActionButton>}</td>
               </tr>
             );
-          }) : <tr><td colSpan={6}><div className="empty-inline">O produto não tem estrutura cadastrada. Inclua os itens aqui ou cadastre a estrutura no item.</div></td></tr>}</tbody>
+          }) : <tr><td colSpan={7}><div className="empty-inline">O produto não tem estrutura cadastrada. Inclua os itens aqui ou cadastre a estrutura no item.</div></td></tr>}</tbody>
         </table>
       </div>
       {canEdit && (
@@ -197,7 +200,8 @@ export function OpStructure({ opId, rows, canEdit }: { opId: string; rows: CompR
 // ------------------------------------------------------------------ Requisição pela estrutura
 export function RequisitionButton({ opId, rows, locations, balances }: { opId: string; rows: CompRow[]; locations: Opt[]; balances: Record<string, Record<string, number>> }) {
   const [open, setOpen] = useState(false);
-  const mats = useMemo(() => rows.filter((r) => r.itemId), [rows]);
+  // só os itens de retirada do estoque (os fabricados são feitos na própria OP)
+  const mats = useMemo(() => rows.filter((r) => r.itemId && r.supply === "ESTOQUE"), [rows]);
   const [st, setSt] = useState<Record<string, { loc: string; qty: string }>>({});
   const { run, pending } = useRun();
   const init = () => {
@@ -224,7 +228,7 @@ export function RequisitionButton({ opId, rows, locations, balances }: { opId: s
               const x = st[r.id]; const b = balances[r.itemId!]?.[x.loc] ?? 0;
               return (
                 <tr key={r.id}><td className="desc">{r.name}</td><td className="num">{qf(r.required)} {r.unit}</td><td className="num">{qf(r.withdrawn)}</td>
-                  <td><select value={x.loc} onChange={(e) => setSt({ ...st, [r.id]: { ...x, loc: e.target.value } })} aria-label="Local">{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></td>
+                  <td><Sel value={x.loc} onChange={(e) => setSt({ ...st, [r.id]: { ...x, loc: e.target.value } })} aria-label="Local">{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></td>
                   <td className={`num${b < r.required - r.withdrawn ? " t-warn" : ""}`}>{qf(b)}</td>
                   <td><input inputMode="decimal" value={x.qty} onChange={(e) => setSt({ ...st, [r.id]: { ...x, qty: e.target.value } })} aria-label="Quantidade" /></td></tr>
               );
@@ -245,7 +249,7 @@ export function OutputForm({ opId, left, unit, locations, defaultLocation }: { o
       <div className="fld"><label htmlFor="o_q">Quantidade produzida ({unit})</label><input id="o_q" inputMode="decimal" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /><small>Faltam {qf(left)}.</small></div>
       <div className="fld"><label htmlFor="o_d">Data</label><input id="o_d" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
       <div className="fld"><span className="flabel">&nbsp;</span><label className="chk" style={{ height: 36 }}><input type="checkbox" checked={f.toStock} onChange={(e) => setF({ ...f, toStock: e.target.checked })} /> Dar entrada no estoque</label></div>
-      {f.toStock && <div className="fld"><label htmlFor="o_l">Local</label><select id="o_l" value={f.loc} onChange={(e) => setF({ ...f, loc: e.target.value })}>{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
+      {f.toStock && <div className="fld"><label htmlFor="o_l">Local</label><Sel id="o_l" value={f.loc} onChange={(e) => setF({ ...f, loc: e.target.value })}>{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>}
       <div className="fld span3"><label htmlFor="o_n">Observação</label><input id="o_n" value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></div>
       <div className="fld" style={{ alignSelf: "end" }}><button type="button" className="btn btn-primary" disabled={pending || !(Number(f.qty.replace(",", ".")) > 0)}
         onClick={() => run(() => reportOutputAction({ opId, qty: Number(f.qty.replace(",", ".")), date: f.date, toStock: f.toStock, locationId: f.toStock ? f.loc : null, notes: f.notes }))}>Apontar produção</button></div>
@@ -253,9 +257,9 @@ export function OutputForm({ opId, left, unit, locations, defaultLocation }: { o
   );
 }
 
-export function AssemblyFromOp({ opId, free, unit, defaultName, team, due }: { opId: string; free: number; unit: string; defaultName: string; team: Opt[]; due: string | null }) {
+export function AssemblyFromOp({ opId, free, unit, defaultName, team, due, partnerId, place }: { opId: string; free: number; unit: string; defaultName: string; team: Opt[]; due: string | null; partnerId?: string | null; place?: string }) {
   const [open, setOpen] = useState(false);
-  const [f, setF] = useState({ qty: String(free), name: defaultName, address: "", responsibleId: "", dueDate: due ?? "" });
+  const [f, setF] = useState({ qty: String(free), name: defaultName, address: place && place !== "Retira na fábrica" ? place : "", responsibleId: "", dueDate: due ?? "" });
   const { run, pending } = useRun();
   return (
     <>
@@ -270,8 +274,8 @@ export function AssemblyFromOp({ opId, free, unit, defaultName, team, due }: { o
             <div className="fld"><label htmlFor="am_q">Quantidade ({unit})</label><input id="am_q" inputMode="decimal" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /><small>Disponível: {qf(free)}</small></div>
             <div className="fld"><label htmlFor="am_d">Previsão de término</label><input id="am_d" type="date" value={f.dueDate} onChange={(e) => setF({ ...f, dueDate: e.target.value })} /></div>
             <div className="fld full"><label htmlFor="am_n">Nome da montagem</label><input id="am_n" value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></div>
-            <div className="fld full"><label htmlFor="am_a">Endereço ou local</label><input id="am_a" value={f.address} onChange={(e) => setF({ ...f, address: e.target.value })} placeholder="Obra, cliente ou box da fábrica" /></div>
-            <div className="fld"><label htmlFor="am_r">Responsável</label><select id="am_r" value={f.responsibleId} onChange={(e) => setF({ ...f, responsibleId: e.target.value })}><option value="">Nenhum</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+            <PlaceField id="am_a" className="fld full" label="Local da montagem" value={f.address} partnerId={partnerId} onChange={(v) => setF({ ...f, address: v })} placeholder="Pesquise: endereço do cliente, obra ou fábrica" />
+            <div className="fld"><label htmlFor="am_r">Responsável</label><Sel id="am_r" value={f.responsibleId} onChange={(e) => setF({ ...f, responsibleId: e.target.value })} aria-label="Responsável"><option value="">Nenhum</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
           </div>
         </Modal>
       )}

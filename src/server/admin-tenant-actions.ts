@@ -17,7 +17,7 @@ const ADMIN_ONLY = { error: "Só administradores da empresa podem alterar esta �
 
 const profSchema = z.object({
   id: z.string().max(64).optional(), name: z.string().trim().min(2, "Informe o nome do perfil.").max(80), description: z.string().max(300).optional().nullable(),
-  permissions: z.record(z.string(), z.union([z.enum(["nenhum", "ver", "editar"]), z.boolean()])),
+  permissions: z.record(z.string(), z.union([z.enum(["nenhum", "ver", "editar", "fabrica", "montagem", "ambos", ""]), z.boolean()])),
 });
 export async function saveProfileAction(input: z.input<typeof profSchema>): Promise<ActionState> {
   const s = await tenantUserForAction({ admin: true });
@@ -27,6 +27,9 @@ export async function saveProfileAction(input: z.input<typeof profSchema>): Prom
   const d = p.data;
   const perms: Record<string, string | boolean> = { custos: d.permissions.custos === true };
   for (const [k] of MODULES) { const v = d.permissions[k]; perms[k] = v === "editar" || v === "ver" ? v : "nenhum"; }
+  // usuário só de apontamento: vê apenas a tela de apontar (fábrica, montagem ou as duas)
+  const ap = d.permissions.apontador;
+  if (ap === "fabrica" || ap === "montagem" || ap === "ambos") perms.apontador = ap;
   try {
     await withTenant(s.tenant.id, async (tx) => {
       if (d.id) await tx.update(E.accessProfiles).set({ name: d.name, description: d.description?.trim() || null, permissions: perms }).where(eq(E.accessProfiles.id, d.id));

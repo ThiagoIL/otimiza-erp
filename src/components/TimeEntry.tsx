@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Sel } from "./SearchPicker";
 import { Icon } from "./Icon";
 import { Modal, useRun } from "./client";
 import { deleteTimeEntryAction, saveTimeEntryAction } from "@/server/production-actions";
@@ -27,11 +28,11 @@ export function TimeEntryModal({ entry, mode, ops, members, stages, centers, mem
       </>}>
       <div className="form">
         <div className="fld full"><label htmlFor="t_op">Ordem de produção <span className="req">*</span></label>
-          <select id="t_op" value={d.productionOrderId} onChange={(e) => { const o = ops.find((x) => x.id === e.target.value); set({ productionOrderId: e.target.value, stageId: o?.stageId ?? d.stageId, workCenterId: o?.workCenterId ?? d.workCenterId, memberId: d.memberId || o?.responsibleId || "" }); }}>
-            <option value="">Selecione…</option>{ops.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</select></div>
-        <div className="fld"><label htmlFor="t_m">Quem trabalhou <span className="req">*</span></label><select id="t_m" value={d.memberId} onChange={(e) => set({ memberId: e.target.value, workCenterId: d.workCenterId || memberCenter[e.target.value] || "" })}><option value="">Selecione…</option>{members.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+          <Sel id="t_op" value={d.productionOrderId} onChange={(e) => { const o = ops.find((x) => x.id === e.target.value); set({ productionOrderId: e.target.value, stageId: o?.stageId ?? d.stageId, workCenterId: o?.workCenterId ?? d.workCenterId, memberId: d.memberId || o?.responsibleId || "" }); }}>
+            <option value="">Selecione…</option>{ops.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}</Sel></div>
+        <div className="fld"><label htmlFor="t_m">Quem trabalhou <span className="req">*</span></label><Sel id="t_m" value={d.memberId} onChange={(e) => set({ memberId: e.target.value, workCenterId: d.workCenterId || memberCenter[e.target.value] || "" })}><option value="">Selecione…</option>{members.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         <div className="fld"><label htmlFor="t_s">Etapa</label><select id="t_s" value={d.stageId} onChange={(e) => set({ stageId: e.target.value })}><option value="">—</option>{stages.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        <div className="fld"><label htmlFor="t_c">Centro de trabalho</label><select id="t_c" value={d.workCenterId} onChange={(e) => set({ workCenterId: e.target.value })}><option value="">—</option>{centers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld"><label htmlFor="t_c">Centro de trabalho</label><Sel id="t_c" value={d.workCenterId} onChange={(e) => set({ workCenterId: e.target.value })}><option value="">—</option>{centers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         <div className="fld"><label htmlFor="t_d">Data</label><input id="t_d" type="date" value={d.date} onChange={(e) => set({ date: e.target.value })} /></div>
         <div className="fld"><label htmlFor="t_i">Início</label><input id="t_i" type="time" value={d.start} onChange={(e) => set({ start: e.target.value })} /></div>
         {mode !== "iniciar" && <>

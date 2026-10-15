@@ -29,7 +29,7 @@ function parse(f: SField, raw: string | null, fd: FormData): { v?: unknown; err?
     case "list": return { v: s.split(";").map((x) => x.trim()).filter(Boolean).slice(0, 50) };
     case "date": if (s === "") return f.req ? { err: "Preencha este campo." } : { v: null }; return isDate(s) ? { v: s } : { err: "Data inválida." };
     case "color": return { v: /^#[0-9A-Fa-f]{6}$/.test(s) ? s : "#1E3A5F" };
-    case "group": return { v: s ? s.slice(0, 64) : null };
+    case "group": case "partner": return { v: s ? s.slice(0, 64) : null };
     default: {
       if (!s) return f.req ? { err: "Preencha este campo." } : { v: null };
       if (s.length > (f.max ?? 300)) return { err: `Use até ${f.max ?? 300} caracteres.` };
@@ -81,6 +81,8 @@ export async function deleteSimpleAction(key: string, id: string): Promise<Actio
   const tbl = E.table;
   try {
     const msg = await s.tx(async (tx) => {
+      const g = E.guard ? await E.guard(tx, id) : null;
+      if (g) return g;
       for (const [t, col, m] of E.uses ?? []) {
         const [{ c }] = await tx.select({ c: sql<number>`count(*)::int` }).from(t).where(eq(col, id));
         if (c > 0) return m;

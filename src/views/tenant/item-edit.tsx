@@ -78,7 +78,7 @@ export async function TenantEditItem({ params }: { params: Promise<{ id: string 
         {fab ? (
           <BomEditor itemId={id} unit={item.unit} canEdit={s.edit} showCost={s.access.costs} salePrice={Number(item.salePrice)}
             centers={d.centers.map((c) => ({ id: c.id, name: c.name, costPerHour: Number(c.c) }))}
-            initial={d.bom.map(({ b, i }) => ({ itemId: i.id, code: i.code, name: i.name, unit: i.unit, qty: Number(b.qty), lossPct: Number(b.lossPct), cost: d.costs.get(i.id) ?? 0 }))}
+            initial={d.bom.map(({ b, i }) => ({ itemId: i.id, code: i.code, name: i.name, unit: i.unit, qty: Number(b.qty), lossPct: Number(b.lossPct), cost: d.costs.get(i.id) ?? 0, supply: b.supply }))}
             routing={d.rot.map((r) => ({ workCenterId: r.workCenterId, hours: Number(r.hours) }))} />
         ) : (
           <section className="panel sec-panel" id="estrutura"><h2>Estrutura</h2><div className="pb muted" style={{ fontSize: 13 }}>

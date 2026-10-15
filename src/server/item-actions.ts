@@ -116,10 +116,10 @@ export async function deleteItemAction(id: string): Promise<ActionState> {
 // ------------------------------------------------------------------------------------
 const bomSchema = z.object({
   itemId: z.string().max(64),
-  components: z.array(z.object({ itemId: z.string().max(64), qty: z.number().positive().max(1e9), lossPct: z.number().min(0).max(1000) })).max(300),
+  components: z.array(z.object({ itemId: z.string().max(64), qty: z.number().positive().max(1e9), lossPct: z.number().min(0).max(1000), supply: z.enum(["FABRICADO", "ESTOQUE"]).default("ESTOQUE") })).max(300),
   routing: z.array(z.object({ workCenterId: z.string().max(64), hours: z.number().positive().max(1e6) })).max(60),
 });
-export async function saveBomAction(input: z.infer<typeof bomSchema>): Promise<ActionState> {
+export async function saveBomAction(input: z.input<typeof bomSchema>): Promise<ActionState> {
   const s = await act("itens");
   if (!s) return NO_ACCESS;
   const p = bomSchema.safeParse(input);
@@ -130,7 +130,7 @@ export async function saveBomAction(input: z.infer<typeof bomSchema>): Promise<A
     await s.tx(async (tx) => {
       await tx.delete(E.itemBom).where(eq(E.itemBom.itemId, d.itemId));
       await tx.delete(E.itemRouting).where(eq(E.itemRouting.itemId, d.itemId));
-      if (d.components.length) await tx.insert(E.itemBom).values(d.components.map((c, i) => ({ tenantId: s.tenant.id, itemId: d.itemId, componentId: c.itemId, qty: String(c.qty), lossPct: String(c.lossPct), position: i })));
+      if (d.components.length) await tx.insert(E.itemBom).values(d.components.map((c, i) => ({ tenantId: s.tenant.id, itemId: d.itemId, componentId: c.itemId, qty: String(c.qty), lossPct: String(c.lossPct), supply: c.supply, position: i })));
       if (d.routing.length) await tx.insert(E.itemRouting).values(d.routing.map((r, i) => ({ tenantId: s.tenant.id, itemId: d.itemId, workCenterId: r.workCenterId, hours: String(r.hours), position: i })));
     });
   } catch (err) {

@@ -31,6 +31,8 @@ export function FilterBar({ children, more, moreActive = 0, right, tabs, solo }:
     const t = e.target as HTMLInputElement;
     if (t.type !== "search" && t.type !== "text") apply();
   };
+  const [busy, startRefresh] = useTransition();
+  const refresh = () => { apply(); startRefresh(() => router.refresh()); };
   const clear = () => { ref.current?.reset(); ref.current?.querySelectorAll("input,select").forEach((el) => { const i = el as HTMLInputElement; if (i.type === "checkbox") i.checked = false; else i.value = ""; }); apply(); };
   return (
     <form ref={ref} role="search" onInput={onInput} onChange={onChange} onSubmit={(e) => { e.preventDefault(); apply(); }} style={{ display: "contents" }}>
@@ -44,6 +46,7 @@ export function FilterBar({ children, more, moreActive = 0, right, tabs, solo }:
           </button>
         )}
         <span className="grow" />{right}
+        <button type="button" className="btn btn-sm btn-icon refresh-btn" onClick={refresh} title="Atualizar a tela" aria-label="Atualizar a tela" aria-busy={busy}><Icon name="refresh" size={15} /></button>
       </div>
       {more && open && (
         <div className="bar more-f">
@@ -140,4 +143,24 @@ export function useRun() {
     router.refresh();
   });
   return { run, pending };
+}
+
+const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+/** Lê "1.234,56", "1234.56" ou "R$ 1.234,56". */
+export function parseMoney(t: string): number {
+  const x = t.replace(/[^\d,.-]/g, "");
+  const n = Number(x.includes(",") ? x.replace(/\./g, "").replace(",", ".") : x);
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Campo de valor em reais: mostra "R$ 1.234,56" e, ao editar, o número puro. */
+export function MoneyInput({ value, onChange, id, disabled, label, min }: { value: number; onChange: (v: number) => void; id?: string; disabled?: boolean; label?: string; min?: number }) {
+  const [edit, setEdit] = useState<string | null>(null);
+  const show = edit ?? brl(value || 0);
+  return (
+    <input id={id} type="text" inputMode="decimal" className="money-in" value={show} disabled={disabled} aria-label={label}
+      onFocus={(e) => { setEdit(value ? String(value).replace(".", ",") : ""); setTimeout(() => e.target.select()); }}
+      onChange={(e) => { setEdit(e.target.value); let n = parseMoney(e.target.value); if (min != null && n < min) n = min; onChange(Math.round(n * 100) / 100); }}
+      onBlur={() => setEdit(null)} />
+  );
 }

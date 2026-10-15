@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { Sel } from "@/components/SearchPicker";
 import { and, asc, desc, eq, gte, lte, sql, type SQL } from "drizzle-orm";
 import { page } from "@/lib/access";
 import * as E from "@/db/erp";
@@ -42,7 +43,7 @@ export async function InvoiceList({ searchParams }: { searchParams: Promise<SP> 
       <FilterBar right={<span className="count">{d.total} notas · {fmtMoney(d.sum)}</span>}
         tabs={<FilterTabs name="st" value={sp.st ?? ""} options={[{ v: "", label: "Todas" }, { v: "EMITIDA", label: "Emitidas" }, { v: "CANCELADA", label: "Canceladas" }]} />}>
         <input type="text" name="num" defaultValue={sp.num ?? ""} placeholder="Nº da nota" aria-label="Número da nota" style={{ width: 120 }} />
-        <select name="cli" defaultValue={sp.cli ?? ""} aria-label="Cliente" style={{ maxWidth: 230 }}><option value="">Todos os clientes</option>{d.clients.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</select>
+        <Sel name="cli" defaultValue={sp.cli ?? ""} aria-label="Cliente" style={{ maxWidth: 230 }}><option value="">Todos os clientes</option>{d.clients.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
         <label className="fl">Emissão de <input type="date" name="de" defaultValue={sp.de ?? ""} /></label>
         <label className="fl">até <input type="date" name="ate" defaultValue={sp.ate ?? ""} /></label>
       </FilterBar>

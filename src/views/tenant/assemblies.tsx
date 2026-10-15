@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Sel } from "@/components/SearchPicker";
 import { notFound } from "next/navigation";
 import { asc, desc, eq, sql } from "drizzle-orm";
 import { page } from "@/lib/access";
@@ -7,6 +8,7 @@ import { Empty, PageHead } from "@/components/ui";
 import { ActionButton, FilterBar, FilterTabs } from "@/components/client";
 import { Icon } from "@/components/Icon";
 import { AssemblyHeaderEdit, AssemblyTree } from "@/components/AssemblyTree";
+import { NotifyButton } from "@/components/Comm";
 import { concludeAssemblyAction, deleteAssemblyAction } from "@/server/assembly-actions";
 import { fmtQty } from "@/lib/format";
 import { fmtD, today } from "@/lib/dates";
@@ -48,7 +50,7 @@ export async function AssembliesList({ searchParams }: { searchParams: Promise<S
       <FilterBar right={<span className="count">{rows.length} {rows.length === 1 ? "montagem" : "montagens"}</span>}
         tabs={<FilterTabs name="st" value={st === "ativas" ? "" : st} options={[{ v: "", label: "Em andamento", n: cnt.ativas }, { v: "late", label: "Atrasadas", n: cnt.late }, { v: "conc", label: "Concluídas", n: cnt.conc }, { v: "todas", label: "Todas", n: all }]} />}>
         <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Montagem, cliente, local ou OP" aria-label="Buscar montagem" /></div>
-        <select name="resp" defaultValue={sp.resp ?? ""} aria-label="Pessoa"><option value="">Toda a equipe</option>{d.team.map((t) => <option key={t.id} value={t.id}>{t.n}</option>)}</select>
+        <Sel name="resp" defaultValue={sp.resp ?? ""} aria-label="Pessoa"><option value="">Toda a equipe</option>{d.team.map((t) => <option key={t.id} value={t.id}>{t.n}</option>)}</Sel>
       </FilterBar>
       {rows.length ? (
         <div className="ob-list" style={{ marginTop: 12 }}>
@@ -93,12 +95,14 @@ export async function AssemblyPage({ params }: { params: Promise<{ id: string }>
     <>
       <PageHead title={a.name} back={{ href: "/montagens", label: "Montagens" }}
         sub={<>Montagem {a.number} · <Link href={`/ops/${d.op.op.id}`}>OP {d.op.op.number}</Link> ({fmtQty(a.qty)} de {fmtQty(d.op.op.qty)} · {d.op.it}){d.cli ? ` · ${d.cli.tradeName || d.cli.name}` : ""}{a.address ? ` · ${a.address}` : ""}</>}
-        actions={s.edit && <>
+        actions={<>
+          <NotifyButton link={`/montagens/${a.id}`} label={`Montagem ${a.number}`} suggest={`Conferir a montagem ${a.number} · ${a.name}`} />
+          {s.edit && <>
           <AssemblyHeaderEdit a={a} team={d.team.map((t) => [t.id, t.name])} />
           {a.completedAt ? <ActionButton className="btn" action={concludeAssemblyAction.bind(null, a.id, false)}>Reabrir</ActionButton>
             : <ActionButton className="btn btn-primary" confirm={done < tot ? `Ainda faltam ${fmtQty(tot - done)} peças. Concluir a montagem mesmo assim?` : undefined} action={concludeAssemblyAction.bind(null, a.id, true)}><Icon name="check" size={16} /> Concluir montagem</ActionButton>}
           <ActionButton className="btn btn-danger" confirm="Excluir esta montagem com todos os locais e peças?" action={deleteAssemblyAction.bind(null, a.id)}><Icon name="trash" size={16} /></ActionButton>
-        </>} />
+        </>}</>} />
       <div className="kpis k5" style={{ marginBottom: 16 }}>
         <div className="kpi"><b>{tot ? Math.round((done / tot) * 100) : 0}%</b><span>Montado</span></div>
         <div className="kpi"><b>{fmtQty(done)}<small className="muted" style={{ fontSize: 15 }}> / {fmtQty(tot)}</small></b><span>Peças montadas</span></div>

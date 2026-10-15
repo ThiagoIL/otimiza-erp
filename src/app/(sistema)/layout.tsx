@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { Shell } from "@/components/Shell";
 import { adminSession, currentTenant, requestArea, tenantSession } from "@/lib/context";
 import { accessOf } from "@/lib/access";
-import { ADMIN_NAV, TENANT_NAV } from "@/lib/modules";
+import { ADMIN_NAV, POINTER_NAV, TENANT_NAV } from "@/lib/modules";
 import { ensureDefaults } from "@/server/common";
 import { ROLE_LABEL } from "@/lib/rules";
 import type { Tenant } from "@/db/schema";
@@ -32,11 +32,12 @@ export default async function SistemaLayout({ children }: { children: React.Reac
     if (!s || t.status !== "ACTIVE") redirect("/login");
     await ensureDefaults(t.id);
     const access = await accessOf({ ...s, tenant: s.tenant as Tenant });
-    const nav = TENANT_NAV.filter((m) => !m.perm || (m.perm === "admin" ? access.isAdmin : access.mods[m.perm] !== "nenhum"));
+    // usuário só de apontamento: menu com a tela de apontar e a comunicação
+    const nav = access.pointer ? POINTER_NAV : TENANT_NAV.filter((m) => !m.perm || (m.perm === "admin" ? access.isAdmin : access.mods[m.perm] !== "nenhum"));
     const readOnly = Object.entries(access.mods).filter(([, l]) => l === "ver").map(([k]) => k);
     return (
       <Suspense>
-        <Shell nav={nav} context={t.name} user={s.user} readOnly={readOnly}
+        <Shell nav={nav} context={t.name} user={s.user} readOnly={readOnly} bell
           roleLabel={access.profileName && !access.isAdmin ? access.profileName : ROLE_LABEL[s.user.role]}>
           {children}
         </Shell>

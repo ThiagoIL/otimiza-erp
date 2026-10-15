@@ -12,6 +12,7 @@ import {
   boolean, date, foreignKey, index, integer, jsonb, numeric, pgTable, primaryKey, text, timestamp, unique, uniqueIndex,
   type AnyPgColumn, type PgColumn,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { createId } from "../lib/ids";
 import { itemTypeEnum, tenants } from "./schema";
 
@@ -175,6 +176,8 @@ export const itemBom = pgTable("item_bom", {
   componentId: text("component_id").notNull(),
   qty: qty("qty").notNull().default("1"),
   lossPct: numeric("loss_pct", { precision: 7, scale: 2 }).notNull().default("0"),
+  /** FABRICADO (feito na OP e apontado como peça pronta) | ESTOQUE (retirado do estoque para a OP) */
+  supply: text("supply").notNull().default("ESTOQUE"),
   position: integer("position").notNull().default(0),
 }, (t) => [
   tid("item_bom_tid_uq", t), index("item_bom_item_idx").on(t.tenantId, t.itemId),
@@ -410,14 +413,43 @@ export const finResponsibles = pgTable("fin_responsibles", {
 
 export type Installment = { n: number; due: string; value: number };
 
+/**
+ * Etapas (situações) do pedido de venda, configuráveis em Comercial › Configurações.
+ * As quatro do sistema (Proposta, Aprovado, Faturado, Cancelado) não podem ser excluídas, mas podem ser renomeadas.
+ * Cada etapa tem um comportamento (kind) igual a uma delas, que define as regras (produção, faturamento…).
+ */
+export const salesStages = pgTable("sales_stages", {
+  ...base(),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("#6B7785"),
+  position: integer("position").notNull().default(1),
+  /** PROPOSTA | APROVADO | FATURADO | CANCELADO */
+  kind: text("kind").notNull(),
+  system: boolean("system").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+}, (t) => [tid("sales_stages_tid_uq", t), uniqueIndex("sales_stages_system_uq").on(t.tenantId, t.kind).where(sql`${t.system}`)]);
+
+/** Locais de entrega e de montagem já usados (endereços de obra, filiais do cliente…). */
+export const deliveryPlaces = pgTable("delivery_places", {
+  ...base(),
+  name: text("name").notNull(),
+  address: text("address"),
+  partnerId: text("partner_id"),
+  active: boolean("active").notNull().default(true),
+}, (t) => [tid("delivery_places_tid_uq", t), fk("delivery_places_partner_fk", t.tenantId, t.partnerId, () => partners, true)]);
+
 // =====================================================================================
 // Comercial: pedidos de venda e faturamento
 // =====================================================================================
 export const salesOrders = pgTable("sales_orders", {
   ...base(),
   number: integer("number").notNull(),
-  /** PROPOSTA | APROVADO | FATURADO | CANCELADO */
+  /** PROPOSTA | APROVADO | FATURADO | CANCELADO (comportamento da etapa) */
   status: text("status").notNull().default("PROPOSTA"),
+  /** etapa mostrada ao usuário (sales_stages); o kind dela é sempre igual a status */
+  stageId: text("stage_id"),
+  /** o pedido tem montagem (no cliente, na obra…) depois da produção */
+  hasAssembly: boolean("has_assembly").notNull().default(false),
   /** decidido pela produção: PENDENTE | EM_PRODUCAO | PRODUZIDO | NAO_NECESSITA */
   productionStatus: text("production_status"),
   partnerId: text("partner_id").notNull(),
@@ -444,6 +476,7 @@ export const salesOrders = pgTable("sales_orders", {
   fk("sales_orders_partner_fk", t.tenantId, t.partnerId, () => partners),
   fk("sales_orders_pm_fk", t.tenantId, t.paymentMethodId, () => paymentMethods),
   fk("sales_orders_pt_fk", t.tenantId, t.paymentTermId, () => paymentTerms),
+  fk("sales_orders_stage_fk", t.tenantId, t.stageId, () => salesStages),
 ]);
 
 export const salesOrderItems = pgTable("sales_order_items", {
@@ -643,6 +676,8 @@ export const productionOrderComponents = pgTable("production_order_components", 
   description: text("description"),
   qtyRequired: qty("qty_required").notNull().default("0"),
   qtyDone: qty("qty_done").notNull().default("0"),
+  /** FABRICADO | ESTOQUE (copiado da estrutura do item) */
+  supply: text("supply").notNull().default("ESTOQUE"),
   fromBom: boolean("from_bom").notNull().default(true),
   position: integer("position").notNull().default(0),
 }, (t) => [tid("po_components_tid_uq", t), fk("po_components_op_fk", t.tenantId, t.productionOrderId, () => productionOrders, true), itemFk("po_components_item_fk", t.tenantId, t.itemId)]);
@@ -674,6 +709,37 @@ export const timeEntries = pgTable("time_entries", {
   tid("time_entries_tid_uq", t),
   fk("time_entries_op_fk", t.tenantId, t.productionOrderId, () => productionOrders, true),
   fk("time_entries_member_fk", t.tenantId, t.memberId, () => teamMembers),
+]);
+
+/**
+ * Apontamento de finalização: o que ficou pronto na fábrica (produto final, peça ou estrutura da OP)
+ * ou na montagem (peça montada). Reflete na OP, na montagem e, para o produto final, no estoque.
+ */
+export const productionReports = pgTable("production_reports", {
+  ...base(),
+  /** FABRICA | MONTAGEM */
+  kind: text("kind").notNull(),
+  date: day("date").notNull(),
+  productionOrderId: text("production_order_id").notNull(),
+  /** peça/estrutura da OP; nulo = produto final */
+  componentId: text("component_id"),
+  assemblyId: text("assembly_id"),
+  assemblyPartId: text("assembly_part_id"),
+  itemId: text("item_id"),
+  description: text("description").notNull(),
+  qty: qty("qty").notNull(),
+  memberId: text("member_id"),
+  /** entrada de produção gerada (produto final) */
+  outputId: text("output_id"),
+  movementId: text("movement_id"),
+  notes: text("notes"),
+  userId: text("user_id"),
+  userName: text("user_name"),
+}, (t) => [
+  tid("production_reports_tid_uq", t),
+  index("production_reports_date_idx").on(t.tenantId, t.date),
+  fk("production_reports_op_fk", t.tenantId, t.productionOrderId, () => productionOrders, true),
+  fk("production_reports_member_fk", t.tenantId, t.memberId, () => teamMembers),
 ]);
 
 export const assemblies = pgTable("assemblies", {
@@ -873,6 +939,55 @@ export const bankEntries = pgTable("bank_entries", {
   notes: text("notes"),
 }, (t) => [tid("bank_entries_tid_uq", t), fk("bank_entries_bank_fk", t.tenantId, t.bankAccountId, () => bankAccounts, true)]);
 
+// =====================================================================================
+// Comunicação: chat (geral e conversa entre duas pessoas), tarefas e avisos (sininho)
+// =====================================================================================
+export const messages = pgTable("messages", {
+  ...base(),
+  /** "geral" ou "dm:<id menor>:<id maior>" */
+  channel: text("channel").notNull(),
+  userId: text("user_id").notNull(),
+  userName: text("user_name").notNull(),
+  body: text("body").notNull(),
+  link: text("link"),
+  linkLabel: text("link_label"),
+}, (t) => [tid("messages_tid_uq", t), index("messages_channel_idx").on(t.tenantId, t.channel, t.createdAt)]);
+
+/** Até onde cada pessoa já leu cada conversa. */
+export const chatReads = pgTable("chat_reads", {
+  ...base(),
+  userId: text("user_id").notNull(),
+  channel: text("channel").notNull(),
+  readAt: ts("read_at").notNull().defaultNow(),
+}, (t) => [tid("chat_reads_tid_uq", t), uniqueIndex("chat_reads_uq").on(t.tenantId, t.userId, t.channel)]);
+
+export const tasks = pgTable("tasks", {
+  ...base(),
+  title: text("title").notNull(),
+  notes: text("notes"),
+  assigneeId: text("assignee_id").notNull(),
+  assigneeName: text("assignee_name").notNull(),
+  creatorId: text("creator_id").notNull(),
+  creatorName: text("creator_name").notNull(),
+  dueDate: day("due_date"),
+  priority: text("priority").notNull().default("Normal"),
+  link: text("link"),
+  linkLabel: text("link_label"),
+  doneAt: ts("done_at"),
+}, (t) => [tid("tasks_tid_uq", t), index("tasks_assignee_idx").on(t.tenantId, t.assigneeId)]);
+
+/** Avisos do sininho: tarefa recebida, mensagem direta, aviso geral. */
+export const notifications = pgTable("notifications", {
+  ...base(),
+  userId: text("user_id").notNull(),
+  kind: text("kind").notNull().default("aviso"), // tarefa | mensagem | aviso
+  title: text("title").notNull(),
+  body: text("body"),
+  link: text("link"),
+  fromName: text("from_name"),
+  readAt: ts("read_at"),
+}, (t) => [tid("notifications_tid_uq", t), index("notifications_user_idx").on(t.tenantId, t.userId, t.readAt)]);
+
 /** Tabelas de negócio com isolamento por empresa (usada na migração de RLS e nos testes). */
 export const TENANT_TABLES = [
   "access_profiles", "company_settings", "salespeople", "units", "item_types", "code_prefixes", "item_bom", "item_routing", "item_suppliers",
@@ -883,6 +998,7 @@ export const TENANT_TABLES = [
   "team_members", "production_orders", "production_order_components", "production_outputs", "time_entries", "assemblies",
   "assembly_locations", "assembly_parts", "purchase_requests", "purchase_request_items", "quotations", "quotation_items",
   "quotation_suppliers", "quotation_prices", "purchase_orders", "purchase_order_items", "fin_titles", "bank_entries", "sequences",
+  "sales_stages", "delivery_places", "production_reports", "messages", "chat_reads", "tasks", "notifications",
 ] as const;
 
 export type Item = typeof items.$inferSelect;

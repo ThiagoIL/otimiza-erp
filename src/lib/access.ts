@@ -20,16 +20,18 @@ const ALL = (l: Level) => Object.fromEntries([...MODULES.map(([k]) => k), "admin
  *  - usuário sem perfil: edita todos os módulos de negócio, mas não vê custos de produção.
  */
 export const accessOf = cache(async (s: TenantCtx): Promise<Access> => {
-  if (s.user.role === "TENANT_ADMIN") return { mods: ALL("editar"), costs: true, isAdmin: true, profileName: "Administrador da empresa" };
+  if (s.user.role === "TENANT_ADMIN") return { mods: ALL("editar"), costs: true, isAdmin: true, profileName: "Administrador da empresa", pointer: null };
   const mods = { ...ALL("editar"), admin: "nenhum" as Level };
-  if (!s.user.profileId) return { mods, costs: false, isAdmin: false, profileName: null };
+  if (!s.user.profileId) return { mods, costs: false, isAdmin: false, profileName: null, pointer: null };
   const [p] = await withTenant(s.tenant.id, (tx) => tx.select().from(accessProfiles).where(eq(accessProfiles.id, s.user.profileId!)).limit(1));
-  if (!p) return { mods, costs: false, isAdmin: false, profileName: null };
+  if (!p) return { mods, costs: false, isAdmin: false, profileName: null, pointer: null };
+  const ap = p.permissions.apontador;
+  if (ap === "fabrica" || ap === "montagem" || ap === "ambos") return { mods: ALL("nenhum"), costs: false, isAdmin: false, profileName: p.name, pointer: ap };
   for (const [k] of MODULES) {
     const v = p.permissions[k];
     mods[k] = v === "editar" || v === "ver" ? v : "nenhum";
   }
-  return { mods, costs: p.permissions.custos === true, isAdmin: false, profileName: p.name };
+  return { mods, costs: p.permissions.custos === true, isAdmin: false, profileName: p.name, pointer: null };
 });
 
 export type PageCtx = TenantCtx & {

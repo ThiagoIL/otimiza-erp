@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Sel } from "@/components/SearchPicker";
 import { notFound } from "next/navigation";
 import { and, asc, desc, eq, gte, ilike, lte, or, sql, type SQL } from "drizzle-orm";
 import { inGroupTree } from "@/server/queries";
@@ -73,9 +74,9 @@ export async function StockPosition({ searchParams }: { searchParams: Promise<SP
       <FilterBar right={<span className="count">{rows.length} itens · {fmtMoney(total)}</span>} moreActive={sp.end ? 1 : 0}
         more={<label className="fl">Endereço no estoque <input type="text" name="end" defaultValue={sp.end ?? ""} /></label>}>
         <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Código ou descrição" aria-label="Buscar item" /></div>
-        <select name="local" defaultValue={sp.local ?? ""} aria-label="Local"><option value="">Todos os locais</option>{L.locs.map((l) => <option key={l.id} value={l.id}>{l.code} · {l.name}</option>)}</select>
-        <select name="grupo" defaultValue={sp.grupo ?? ""} aria-label="Grupo"><option value="">Todos os grupos</option>{L.groups.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</select>
-        <select name="tipo" defaultValue={sp.tipo ?? ""} aria-label="Tipo"><option value="">Todos os tipos</option>{L.types.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</select>
+        <Sel name="local" defaultValue={sp.local ?? ""} aria-label="Local"><option value="">Todos os locais</option>{L.locs.map((l) => <option key={l.id} value={l.id}>{l.code} · {l.name}</option>)}</Sel>
+        <Sel name="grupo" defaultValue={sp.grupo ?? ""} aria-label="Grupo"><option value="">Todos os grupos</option>{L.groups.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</Sel>
+        <Sel name="tipo" defaultValue={sp.tipo ?? ""} aria-label="Tipo"><option value="">Todos os tipos</option>{L.types.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</Sel>
         <select name="sit" defaultValue={sp.sit ?? ""} aria-label="Situação"><option value="">Todas as situações</option><option value="com">Com saldo</option><option value="sem">Sem saldo</option><option value="abaixo">Abaixo do mínimo</option><option value="acima">Acima do máximo</option><option value="negativo">Saldo negativo</option></select>
       </FilterBar>
       <div className="tbl">
@@ -142,17 +143,17 @@ export async function StockMovements({ searchParams }: { searchParams: Promise<S
       {d.lock && <div className="infoline"><Icon name="lock" size={14} className="ic" /> Estoque fechado até {fmtD(d.lock)}: lançamentos até essa data não podem ser alterados.</div>}
       <FilterBar moreActive={moreActive} right={<span className="count">{d.total} lançamentos</span>}
         more={<>
-          <select name="grupo" defaultValue={sp.grupo ?? ""} aria-label="Grupo"><option value="">Todos os grupos</option>{L.groups.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</select>
+          <Sel name="grupo" defaultValue={sp.grupo ?? ""} aria-label="Grupo"><option value="">Todos os grupos</option>{L.groups.map((g) => <option key={g.id} value={g.id}>{g.n}</option>)}</Sel>
           <select name="origem" defaultValue={sp.origem ?? ""} aria-label="Origem"><option value="">Todas as origens</option><option value="manual">Lançamento manual</option><option value="op">Ordem de produção</option><option value="nf">Nota fiscal</option><option value="pc">Recebimento de compra</option><option value="inv">Inventário</option></select>
-          <select name="op" defaultValue={sp.op ?? ""} aria-label="OP" style={{ maxWidth: 200 }}><option value="">Qualquer OP</option>{L.ops.map((o) => <option key={o.id} value={o.id}>OP {o.n}</option>)}</select>
-          <select name="forn" defaultValue={sp.forn ?? ""} aria-label="Fornecedor" style={{ maxWidth: 200 }}><option value="">Qualquer fornecedor</option>{L.sups.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</select>
+          <Sel name="op" defaultValue={sp.op ?? ""} aria-label="OP" style={{ maxWidth: 200 }}><option value="">Qualquer OP</option>{L.ops.map((o) => <option key={o.id} value={o.id}>OP {o.n}</option>)}</Sel>
+          <Sel name="forn" defaultValue={sp.forn ?? ""} aria-label="Fornecedor" style={{ maxWidth: 200 }}><option value="">Qualquer fornecedor</option>{L.sups.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
           <label className="fl">Documento <input type="text" name="doc" defaultValue={sp.doc ?? ""} style={{ width: 120 }} /></label>
           <label className="fl">Usuário <input type="text" name="usuario" defaultValue={sp.usuario ?? ""} style={{ width: 120 }} /></label>
           <label className="fl">Código exato <input type="text" name="item" defaultValue={sp.item ?? ""} style={{ width: 140 }} /></label>
         </>}>
         <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Item, documento ou observação" aria-label="Buscar" /></div>
         <select name="tipo" defaultValue={sp.tipo ?? ""} aria-label="Tipo"><option value="">Todos os tipos</option>{Object.entries(MV_TYPES).map(([k, x]) => <option key={k} value={k}>{x.label}</option>)}</select>
-        <select name="local" defaultValue={sp.local ?? ""} aria-label="Local"><option value="">Todos os locais</option>{L.locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
+        <Sel name="local" defaultValue={sp.local ?? ""} aria-label="Local"><option value="">Todos os locais</option>{L.locs.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}</Sel>
         <label className="fl">De <input type="date" name="de" defaultValue={sp.de ?? ""} /></label>
         <label className="fl">até <input type="date" name="ate" defaultValue={sp.ate ?? ""} /></label>
       </FilterBar>

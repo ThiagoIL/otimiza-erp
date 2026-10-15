@@ -7,14 +7,18 @@ import { Icon } from "./Icon";
 import { Toaster, Flash } from "./Toast";
 import { logoutAction } from "@/server/auth-actions";
 import { matchNav, type NavModule } from "@/lib/modules";
+import { ColumnMenu } from "./ColumnMenu";
+import { Bell } from "./Comm";
 
 export function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join("");
 }
 
 /** Moldura do sistema: menu lateral por módulo (como no protótipo), barra superior e avisos. */
-export function Shell({ nav, context, user, roleLabel, readOnly, children }: {
+export function Shell({ nav, context, user, roleLabel, readOnly, bell, children }: {
   nav: NavModule[]; context?: string; user: { name: string; email: string }; roleLabel: string;
+  /** sininho de avisos (só nas empresas) */
+  bell?: boolean;
   /** módulos em que o usuário só consulta */
   readOnly?: string[]; children: ReactNode;
 }) {
@@ -64,6 +68,7 @@ export function Shell({ nav, context, user, roleLabel, readOnly, children }: {
             {ro && <span className="ro-chip">Somente consulta</span>}
           </div>
           <div className="top-right">
+            {bell && <Bell />}
             <Link className="user" href="/conta" title={`${user.email} · ${roleLabel}`} style={{ textDecoration: "none", color: "inherit" }}>
               <span className="avatar">{initials(user.name)}</span>
               <span className="uname">{user.name}<small>{roleLabel}</small></span>
@@ -83,6 +88,7 @@ export function Shell({ nav, context, user, roleLabel, readOnly, children }: {
           {children}
         </main>
       </div>
+      <ColumnMenu />
       <Toaster />
       <Flash />
     </div>

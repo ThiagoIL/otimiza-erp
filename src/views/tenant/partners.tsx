@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { Sel } from "@/components/SearchPicker";
 import { and, asc, desc, eq, ilike, or, sql, type SQL } from "drizzle-orm";
 import { page, type PageCtx } from "@/lib/access";
 import * as E from "@/db/erp";
@@ -61,14 +62,14 @@ export async function PartnersList({ searchParams, area = "comercial" }: { searc
       <FilterBar moreActive={moreActive} right={<span className="count">{d.total} cadastros</span>}
         tabs={<FilterTabs name="tipo" value={sp.tipo ?? ""} options={TABS.map(([v, l]) => ({ v, label: l, n: cnt(v) }))} />}
         more={<>
-          <select name="vend" defaultValue={sp.vend ?? ""} aria-label="Vendedor"><option value="">Todos os vendedores</option>{sellers.map((u) => <option key={u.id} value={u.id}>{u.n}</option>)}</select>
+          <Sel name="vend" defaultValue={sp.vend ?? ""} aria-label="Vendedor"><option value="">Todos os vendedores</option>{sellers.map((u) => <option key={u.id} value={u.id}>{u.n}</option>)}</Sel>
           <label className="fl">E-mail ou telefone <input type="text" name="contato" defaultValue={sp.contato ?? ""} /></label>
         </>}>
         <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Nome ou nome fantasia" aria-label="Nome" /></div>
         <input type="text" name="doc" defaultValue={sp.doc ?? ""} placeholder="CNPJ ou CPF" aria-label="CNPJ ou CPF" style={{ width: 170 }} />
         <input type="text" name="cidade" defaultValue={sp.cidade ?? ""} placeholder="Cidade" aria-label="Cidade" style={{ width: 150 }} />
-        <select name="uf" defaultValue={sp.uf ?? ""} aria-label="UF"><option value="">Todas as UFs</option>{UFS.map((u) => <option key={u}>{u}</option>)}</select>
-        <select name="perfil" defaultValue={sp.perfil ?? ""} aria-label="Perfil"><option value="">Todos os perfis</option>{d.profiles.map((p) => <option key={p.id} value={p.id}>{p.n}</option>)}</select>
+        <Sel name="uf" defaultValue={sp.uf ?? ""} aria-label="UF"><option value="">Todas as UFs</option>{UFS.map((u) => <option key={u}>{u}</option>)}</Sel>
+        <Sel name="perfil" defaultValue={sp.perfil ?? ""} aria-label="Perfil"><option value="">Todos os perfis</option>{d.profiles.map((p) => <option key={p.id} value={p.id}>{p.n}</option>)}</Sel>
         <select name="sit" defaultValue={sp.sit ?? ""} aria-label="Situação"><option value="">Ativos</option><option value="inativos">Inativos</option><option value="todos">Ativos e inativos</option></select>
       </FilterBar>
       <div className="tbl">

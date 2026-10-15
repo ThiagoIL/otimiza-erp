@@ -56,7 +56,7 @@ try {
 
   // ---------- empresa e cadastros básicos ----------
   await ins("company_settings", { legalName: "Carrocerias Modelo Ltda", tradeName: "Carrocerias Modelo", document: "12.345.678/0001-95", stateReg: "061234567", taxRegime: "Simples Nacional",
-    phone: "(85) 3371-0000", email: "contato@carroceriasmodelo.com.br", zip: "61939-160", street: "Av. Industrial", number: "1500", district: "Distrito Industrial", city: "Maracanaú", cityCode: "2307650", uf: "CE", defaultsVersion: 1 });
+    phone: "(85) 3371-0000", email: "contato@carroceriasmodelo.com.br", zip: "61939-160", street: "Av. Industrial", number: "1500", district: "Distrito Industrial", city: "Maracanaú", cityCode: "2307650", uf: "CE", defaultsVersion: 2 });
   for (const [code, name, decimals] of [["UN", "Unidade", 0], ["PC", "Peça", 0], ["KG", "Quilograma", 3], ["M", "Metro", 2], ["M2", "Metro quadrado", 2], ["L", "Litro", 2], ["GL", "Galão", 0], ["CX", "Caixa", 0], ["PR", "Par", 0], ["KIT", "Kit", 0], ["H", "Hora", 2]])
     await ins("units", { code, name, decimals });
   const T = {};
@@ -141,16 +141,19 @@ try {
     ["it32", "PA-004", "CARROCERIA BASCULANTE GRADES MÓVEIS ASTM A36", null, "g07", "UN", "PA", 0, 29400, "e03", 0],
     ["it33", "PA-005", "CARROCERIA ABERTA CARGA SECA MADEIRA PU - 6200", null, "g07", "UN", "PA", 0, 19800, "e03", 0],
     ["it34", "PA-006", "SOBRE GRADE TRANSPORTE BOVINO LINHA MÉDIA 5000", null, "g07", "UN", "PA", 0, 14200, "e03", 0],
+    ["it35", "SA-001", "ESTRUTURA BASE SOLDADA DO FURGÃO", "chassi, longarinas e travessas", "g07", "UN", "SA", 0, 0, "e02", 0],
+    ["it36", "SA-002", "PAINEL LATERAL DO FURGÃO EM ALUMÍNIO", null, "g07", "UN", "SA", 0, 0, "e02", 0],
   ];
   const NCM = { it13: "72091700", it14: "72085200", it15: "72163100", it16: "73066100", it17: "76061220", it18: "73181500", it19: "73181600", it21: "32089010", it22: "32089010", it26: "85122022", it29: "87079090", it30: "87079090", it31: "87079090", it32: "87079090", it33: "87079090", it34: "87169090" };
   const FP = (k) => (["it13", "it14", "it15", "it16", "it17"].includes(k) ? "f01" : ["it06", "it07"].includes(k) ? "f03" : ["it21", "it22", "it23"].includes(k) ? "f04" : "f02");
   const IT = {}, COST = {}, UNIT = {};
+  const FAB = (k) => ["it35", "it36"].includes(k); // semiacabados: feitos na própria OP
   for (const [k, code, name, complement, g, unit, t, min, cost, loc] of I) {
     COST[k] = cost; UNIT[k] = unit;
     const pa = t === "PA";
     IT[k] = await ins("items", { code, name, complement, groupId: G[g], unit, typeId: T[t].id, type: T[t].kind, minStock: min, maxStock: pa ? 0 : min * 3, defaultLocationId: L[loc], cost,
       salePrice: pa ? Math.round((cost * 1.32) / 100) * 100 : t === "UC" && k === "it28" ? 24.9 : 0, ncm: NCM[k] ?? null, defaultSupplierId: pa ? null : P[FP(k)], leadDays: pa ? null : 7 });
-    if (!pa) await ins("item_suppliers", { itemId: IT[k], partnerId: P[FP(k)], lastPrice: cost, leadDays: 7 });
+    if (!pa && t !== "SA") await ins("item_suppliers", { itemId: IT[k], partnerId: P[FP(k)], lastPrice: cost, leadDays: 7 });
   }
   // estrutura e roteiro
   const C = {};
@@ -158,15 +161,15 @@ try {
     ["c4", "CT-04", "Cabine de pintura", 8, 130, "Preparação, primer e PU"], ["c5", "CT-05", "Acabamento e elétrica", 8, 90, "Iluminação, acessórios e vedação"], ["c6", "CT-06", "Inspeção e expedição", 8, 70, "Checklist final e liberação"]])
     C[k] = await ins("work_centers", { code, name, capacityHours: cap, costPerHour: cph, description });
   const BOMS = {
-    it29: { m: [["it13", 5], ["it15", 4], ["it16", 6], ["it17", 3], ["it07", 8], ["it18", 40], ["it19", 40], ["it20", 1], ["it21", 2], ["it22", 1], ["it23", 1], ["it24", 4], ["it25", 2], ["it26", 8], ["it01", 1]], r: [["c1", 14], ["c2", 26], ["c3", 36], ["c4", 16], ["c5", 8], ["c6", 3]] },
-    it30: { m: [["it13", 3], ["it15", 3], ["it16", 4], ["it17", 2], ["it07", 5], ["it18", 30], ["it19", 30], ["it20", 1], ["it21", 1], ["it22", 1], ["it23", 1], ["it24", 4], ["it25", 2], ["it26", 6], ["it01", 1]], r: [["c1", 9], ["c2", 16], ["c3", 24], ["c4", 11], ["c5", 6], ["c6", 2]] },
+    it29: { m: [["it35", 1], ["it36", 2], ["it13", 5], ["it15", 4], ["it16", 6], ["it17", 3], ["it07", 8], ["it18", 40], ["it19", 40], ["it20", 1], ["it21", 2], ["it22", 1], ["it23", 1], ["it24", 4], ["it25", 2], ["it26", 8], ["it01", 1]], r: [["c1", 14], ["c2", 26], ["c3", 36], ["c4", 16], ["c5", 8], ["c6", 3]] },
+    it30: { m: [["it35", 1], ["it36", 2], ["it13", 3], ["it15", 3], ["it16", 4], ["it17", 2], ["it07", 5], ["it18", 30], ["it19", 30], ["it20", 1], ["it21", 1], ["it22", 1], ["it23", 1], ["it24", 4], ["it25", 2], ["it26", 6], ["it01", 1]], r: [["c1", 9], ["c2", 16], ["c3", 24], ["c4", 11], ["c5", 6], ["c6", 2]] },
     it31: { m: [["it14", 2], ["it15", 3], ["it16", 3], ["it07", 6], ["it18", 30], ["it19", 30], ["it21", 1], ["it22", 1], ["it23", 1], ["it03", 2], ["it05", 4], ["it26", 6], ["it01", 1]], r: [["c1", 10], ["c2", 24], ["c4", 12], ["c5", 5], ["c6", 2]] },
     it32: { m: [["it14", 4], ["it15", 5], ["it16", 4], ["it07", 9], ["it18", 40], ["it19", 40], ["it21", 2], ["it22", 1], ["it23", 1], ["it03", 4], ["it04", 4], ["it05", 8], ["it09", 4], ["it26", 6], ["it02", 1]], r: [["c1", 16], ["c2", 34], ["c4", 16], ["c5", 6], ["c6", 3]] },
     it33: { m: [["it14", 2], ["it15", 4], ["it16", 2], ["it07", 5], ["it18", 40], ["it19", 40], ["it21", 1], ["it22", 1], ["it23", 1], ["it03", 2], ["it05", 4], ["it26", 6], ["it01", 1]], r: [["c1", 8], ["c2", 20], ["c3", 10], ["c4", 10], ["c5", 5], ["c6", 2]] },
     it34: { m: [["it16", 6], ["it15", 2], ["it07", 5], ["it18", 30], ["it19", 30], ["it21", 1], ["it22", 1], ["it23", 1], ["it09", 4]], r: [["c1", 6], ["c2", 22], ["c4", 8], ["c6", 2]] },
   };
   for (const [k, b] of Object.entries(BOMS)) {
-    let i = 0; for (const [m, q] of b.m) await ins("item_bom", { itemId: IT[k], componentId: IT[m], qty: q, lossPct: ["it13", "it14", "it17"].includes(m) ? 5 : 0, position: i++ });
+    let i = 0; for (const [m, q] of b.m) await ins("item_bom", { itemId: IT[k], componentId: IT[m], qty: q, lossPct: ["it13", "it14", "it17"].includes(m) ? 5 : 0, supply: FAB(m) ? "FABRICADO" : "ESTOQUE", position: i++ });
     i = 0; for (const [w, h] of b.r) await ins("item_routing", { itemId: IT[k], workCenterId: C[w], hours: h, position: i++ });
   }
   const unitCost = (k) => BOMS[k] ? r2(BOMS[k].m.reduce((a, [m, q]) => a + q * COST[m], 0) + BOMS[k].r.reduce((a, [w, h]) => a + h * { c1: 95, c2: 110, c3: 105, c4: 130, c5: 90, c6: 70 }[w], 0)) : COST[k];
@@ -211,11 +214,13 @@ try {
     ["pcp", "PCP e produção", "Fila de pedidos, OPs, apontamentos, montagens e estoque. Vê custos.", { ...all("nenhum"), dash: "ver", comercial: "ver", producao: "editar", estoque: "editar", itens: "editar", compras: "ver", custos: true }],
     ["alm", "Almoxarifado e compras", "Estoque, inventário, solicitações, cotações e pedidos de compra.", { ...all("nenhum"), dash: "ver", producao: "ver", estoque: "editar", itens: "editar", compras: "editar", custos: false }],
     ["fin", "Financeiro", "Contas a pagar e receber, extrato e relatórios.", { ...all("nenhum"), dash: "ver", comercial: "ver", compras: "ver", financeiro: "editar", custos: false }],
-    ["mont", "Montagem em campo", "Acompanha montagens e aponta horas.", { ...all("nenhum"), producao: "editar", custos: false }]]) PRF[k] = await ins("access_profiles", { name, description, permissions: perms });
+    ["mont", "Montagem em campo", "Acompanha montagens e aponta horas.", { ...all("nenhum"), producao: "editar", custos: false }],
+    ["apont", "Apontador da fábrica", "Só aponta o que ficou pronto na fábrica e na montagem (celular ou tablet).", { ...all("nenhum"), custos: false, apontador: "ambos" }]]) PRF[k] = await ins("access_profiles", { name, description, permissions: perms });
   await c.query("reset role");
   const domain = email.split("@")[1];
-  const extra = [["Carlos Andrade", `vendas@${domain}`, PRF.com], ["Francisco Lima", `pcp@${domain}`, PRF.pcp], ["Fernanda Rocha", `financeiro@${domain}`, PRF.fin]];
-  for (const [n, e, p] of extra) await c.query("insert into users (id, tenant_id, name, email, password_hash, role, must_change_password, profile_id) values ($1, $2, $3, $4, $5, 'TENANT_USER', false, $6)", [newId(), tid, n, e, hash, p]);
+  const extra = [["Carlos Andrade", `vendas@${domain}`, PRF.com], ["Francisco Lima", `pcp@${domain}`, PRF.pcp], ["Fernanda Rocha", `financeiro@${domain}`, PRF.fin], ["José Ribeiro", `apontamento@${domain}`, PRF.apont]];
+  const U = {};
+  for (const [n, e, p] of extra) { U[e.split("@")[0]] = newId(); await c.query("insert into users (id, tenant_id, name, email, password_hash, role, must_change_password, profile_id) values ($1, $2, $3, $4, $5, 'TENANT_USER', false, $6)", [U[e.split("@")[0]], tid, n, e, hash, p]); }
   await c.query("set local role erp_app");
 
   // subgrupos de exemplo (grupo pai › subgrupo), com prefixo próprio
@@ -274,14 +279,23 @@ try {
   await purchase("f01", [["it14", 12, 612], ["it17", 10, 540]], D(-2), "ENVIADO", { issueDate: D(-12) });
   await purchase("f02", [["it24", 20, 46.8], ["it25", 10, 132]], D(10), "RASCUNHO", { issueDate: TODAY });
 
+  // ---------- etapas do pedido de venda ----------
+  const SS = {};
+  for (const [k, name, color, kind, system, position] of [["PROPOSTA", "Proposta", "#6B7785", "PROPOSTA", true, 1], ["NEGOC", "Em negociação", "#7A4FA0", "PROPOSTA", false, 2],
+    ["APROVADO", "Aprovado", "#E0601A", "APROVADO", true, 3], ["FATURADO", "Faturado", "#2E7D4F", "FATURADO", true, 4], ["ENTREGUE", "Entregue", "#1F8A8A", "FATURADO", false, 5], ["CANCELADO", "Cancelado", "#B3261E", "CANCELADO", true, 6]])
+    SS[k] = await ins("sales_stages", { name, color, kind, system, position });
+  // locais de entrega usados com frequência
+  await ins("delivery_places", { name: "Obra Residencial Atlântico", address: "Av. Beira Mar, 4100 · Fortaleza/CE", partnerId: null });
+  await ins("delivery_places", { name: "CD Supermercado Potiguar", address: "Av. Salgado Filho, 3200 · Natal/RN", partnerId: null });
+
   // ---------- vendas, OPs e faturamento ----------
   let pv = 160, opn = 80, nf = 2200, asmN = 20;
   const conds = [["30/60/90", "Boleto"], ["Entrada + 2x", "PIX"], ["À vista", "Transferência"], ["30/60", "Boleto"]];
-  async function order({ cli, lines, status, prod, issue, delivery, k = 0, place, custom }) {
+  async function order({ cli, lines, status, prod, issue, delivery, k = 0, place, custom, stage, assembly = false }) {
     const number = ++pv;
     const total = r2(lines.reduce((a, [, q, pr, d = 0]) => a + q * pr * (1 - d / 100), 0));
     const [cn, pmn] = conds[k % 4];
-    const id = await ins("sales_orders", { number, status, productionStatus: prod, partnerId: P[cli], salespersonId: ["cl02", "cl05", "cl07"].includes(cli) ? SP.marina : SP.carlos, salespersonName: ["cl02", "cl05", "cl07"].includes(cli) ? "Marina Souza" : "Carlos Andrade", issueDate: issue, deliveryDate: delivery,
+    const id = await ins("sales_orders", { number, status, stageId: SS[stage ?? status], hasAssembly: assembly, productionStatus: prod, partnerId: P[cli], salespersonId: ["cl02", "cl05", "cl07"].includes(cli) ? SP.marina : SP.carlos, salespersonName: ["cl02", "cl05", "cl07"].includes(cli) ? "Marina Souza" : "Carlos Andrade", issueDate: issue, deliveryDate: delivery,
       deliveryPlace: place ?? "Retira na fábrica", paymentMethodId: PM[pmn], paymentTermId: PT[cn].id, installments: parc(total, PT[cn].days, delivery ?? issue), total, approvedAt: status === "PROPOSTA" ? null : issue,
       custom: custom ?? { [CF2]: place ? "Entrega no cliente" : "Retira na fábrica" } });
     let pos = 0;
@@ -299,9 +313,9 @@ try {
       const req = r2(q * qty * (["it13", "it14", "it17"].includes(m) ? 1.05 : 1));
       const grp = ["it13", "it14", "it15", "it16", "it17"].includes(m) ? 1 : ["it21", "it22", "it23"].includes(m) ? 3 : ["it26", "it01", "it02", "it24", "it25"].includes(m) ? 4 : 2;
       const done = lvl >= 5 || grp < lvl ? req : grp === lvl ? Math.floor(req / 2) : 0;
-      await ins("production_order_components", { productionOrderId: id, itemId: IT[m], qtyRequired: req, qtyDone: done, fromBom: true, position: pos++ });
-      // material retirado do estoque para a OP conforme a etapa
-      if (lvl < 5 && grp <= Math.max(lvl, 1) && lvl > 0) {
+      await ins("production_order_components", { productionOrderId: id, itemId: IT[m], qtyRequired: req, qtyDone: done, supply: FAB(m) ? "FABRICADO" : "ESTOQUE", fromBom: true, position: pos++ });
+      // material retirado do estoque para a OP conforme a etapa (os fabricados são feitos na OP)
+      if (!FAB(m) && lvl < 5 && grp <= Math.max(lvl, 1) && lvl > 0) {
         const loc = ["it13", "it14", "it15", "it16", "it17"].includes(m) ? L.e04 : L.e01;
         await mv({ date: addD(start, grp * 2), type: "SAIDA", itemId: IT[m], locationId: loc, qty: req, unitCost: COST[m], document: `OP ${number}`, notes: "Requisição pela estrutura da OP", productionOrderId: id, userName: "Almoxarifado" });
       }
@@ -343,7 +357,7 @@ try {
   const hist = [["cl01", "it29", -84], ["cl02", "it31", -78], ["cl04", "it33", -72], ["cl03", "it30", -66], ["cl05", "it32", -58], ["cl06", "it29", -50], ["cl06", "it34", -44], ["cl01", "it33", -38], ["cl03", "it29", -30], ["cl05", "it31", -22], ["cl02", "it30", -15], ["cl04", "it32", -9]];
   for (const [k, [cli, it, conc]] of hist.entries()) {
     const lines = [[it, 1, price(it), k % 3 === 0 ? 3 : 0]]; if (k % 4 === 1) lines.push(["it26", 4, 29]);
-    const o = await order({ cli, lines, status: "FATURADO", prod: "PRODUZIDO", issue: D(conc - 30), delivery: D(conc + 2), k, place: k % 2 ? null : "Entrega no cliente" });
+    const o = await order({ cli, lines, status: "FATURADO", stage: conc < -20 ? "ENTREGUE" : "FATURADO", prod: "PRODUZIDO", issue: D(conc - 30), delivery: D(conc + 2), k, place: k % 2 ? null : "Entrega no cliente", assembly: it === "it29" });
     await op({ so: o.id, cli, it, qty: 1, stage: "s6", need: D(conc + 1 - (k % 3 === 0 ? 3 : 0)), start: D(conc - 22), resp: "p7", wc: "c6", produced: 1, completed: D(conc), created: D(conc - 28) });
     if (k % 4 === 1) await mv({ date: D(conc - 5), type: "TRANSFERENCIA", itemId: IT.it26, locationId: L.e01, destLocationId: L.e03, qty: 4, unitCost: COST.it26, document: `Separação pedido ${o.number}`, userName: "Expedição" });
     await invoice(o, cli, lines, D(Math.min(conc + 2, -1)), k);
@@ -355,7 +369,7 @@ try {
   const liveOps = [];
   for (const [k, [cli, it, st, need, resp, wc, prio, produced]] of live.entries()) {
     const qty = k === 6 ? 2 : 1;
-    const o = await order({ cli, lines: [[it, qty, price(it)]], status: "APROVADO", prod: "EM_PRODUCAO", issue: D(Math.min(need - 25, -6)), delivery: D(need), k, place: k % 2 ? "Entrega no cliente" : null, custom: { [CF1]: ["VW Delivery 11.180", "Accelo 1016", "Constellation 17.190", "Hyundai HR"][k % 4] } });
+    const o = await order({ cli, lines: [[it, qty, price(it)]], status: "APROVADO", prod: "EM_PRODUCAO", assembly: it === "it29" || it === "it30", issue: D(Math.min(need - 25, -6)), delivery: D(need), k, place: k % 2 ? "Entrega no cliente" : null, custom: { [CF1]: ["VW Delivery 11.180", "Accelo 1016", "Constellation 17.190", "Hyundai HR"][k % 4] } });
     liveOps.push({ ...(await op({ so: o.id, cli, it, qty, stage: st, need: D(need), start: D(Math.min(need - 20, -4)), resp, wc, prio, produced, created: D(Math.min(need - 25, -6)) })), cli, it, produced });
   }
   for (const [i, sk, w, pk] of [[6, "s3", "c2", "p2"], [1, "s3", "c3", "p8"], [11, "s3", "c3", "p10"]])
@@ -367,7 +381,7 @@ try {
   // venda de peça do estoque: produção marcou como sem necessidade, pronto para faturar
   await order({ cli: "cl07", lines: [["it26", 10, 29], ["it28", 4, 24.9]], status: "APROVADO", prod: "NAO_NECESSITA", issue: D(-3), delivery: D(2), k: 2 });
   // propostas
-  const prop1 = await order({ cli: "cl05", lines: [["it29", 2, price("it29")], ["it01", 2, 210]], status: "PROPOSTA", prod: null, issue: D(-2), delivery: D(40), k: 1 });
+  const prop1 = await order({ cli: "cl05", lines: [["it29", 2, price("it29")], ["it01", 2, 210]], status: "PROPOSTA", stage: "NEGOC", prod: null, issue: D(-2), delivery: D(40), k: 1, assembly: true });
   await order({ cli: "cl02", lines: [["it33", 1, price("it33")]], status: "PROPOSTA", prod: null, issue: D(-20), delivery: D(35), k: 3 });
   await order({ cli: "cl01", lines: [["it29", 3, price("it29"), 4]], status: "PROPOSTA", prod: null, issue: D(-1), delivery: D(45), k: 0, place: "Rod. CE-356, km 4 · Russas/CE" });
 
@@ -446,6 +460,19 @@ try {
   await ins("bank_entries", { bankAccountId: BK, date: D(-30), description: "Transferência para o caixa", amount: -2000 });
   await ins("bank_entries", { bankAccountId: BK2, date: D(-30), description: "Transferência do banco", amount: 2000 });
 
+  // ---------- comunicação: conversa geral, tarefas e avisos de exemplo ----------
+  const at = (d, h) => new Date(`${D(d)}T${h}:00-03:00`);
+  for (const [uid, name, body, d, h] of [[adminId, "Administrador Demo", "Bom dia, pessoal! A partir de hoje os avisos e tarefas ficam por aqui.", -1, "08:05"],
+    [U.pcp, "Francisco Lima", "A OP do furgão 6200 da Via Diesel entra na pintura hoje à tarde.", -1, "09:40"],
+    [U.vendas, "Carlos Andrade", "Cliente Supermercado Potiguar pediu para confirmar a data de entrega.", 0, "08:20"]])
+    await ins("messages", { channel: "geral", userId: uid, userName: name, body, createdAt: at(d, h) });
+  await ins("tasks", { title: "Revisar a proposta do Supermercado Potiguar", notes: "Conferir o prazo de entrega e a montagem antes de aprovar.", assigneeId: U.vendas, assigneeName: "Carlos Andrade",
+    creatorId: adminId, creatorName: "Administrador Demo", dueDate: D(1), priority: "Alta", link: `/pedidos/${prop1.id}`, linkLabel: `Pedido ${prop1.number}` });
+  await ins("tasks", { title: "Pagar a conta de energia", assigneeId: U.financeiro, assigneeName: "Fernanda Rocha", creatorId: adminId, creatorName: "Administrador Demo", dueDate: D(3), priority: "Normal" });
+  await ins("tasks", { title: "Conferir a montagem da Via Diesel", assigneeId: adminId, assigneeName: "Administrador Demo", creatorId: U.pcp, creatorName: "Francisco Lima", dueDate: D(0), priority: "Normal", link: "/montagens", linkLabel: "Montagens" });
+  await ins("notifications", { userId: adminId, kind: "tarefa", title: "Nova tarefa: Conferir a montagem da Via Diesel", fromName: "Francisco Lima", link: "/comunicacao?aba=tarefas" });
+  await ins("notifications", { userId: adminId, kind: "aviso", title: "Inventário do almoxarifado na sexta-feira", body: "Separar a equipe das 14h às 17h.", fromName: "Fernanda Rocha" });
+
   // ---------- numeração ----------
   for (const [key, table] of [["sales_order", "sales_orders"], ["production_order", "production_orders"], ["purchase_order", "purchase_orders"], ["assembly", "assemblies"], ["purchase_request", "purchase_requests"], ["quotation", "quotations"]])
     await c.query(`insert into sequences (tenant_id, key, value) select $1, $2, coalesce(max(number), 0) from ${table}`, [tid, key]);
@@ -453,7 +480,7 @@ try {
   await c.query("commit");
   console.log(`Empresa de demonstração criada: ${slug}.${process.env.ROOT_DOMAIN ?? "SEU_DOMINIO"}`);
   console.log(`Administrador: ${email}  Senha: ${pass}`);
-  console.log(`Outros usuários (mesma senha): vendas@${email.split("@")[1]} (Comercial), pcp@${email.split("@")[1]} (PCP), financeiro@${email.split("@")[1]} (Financeiro)`);
+  console.log(`Outros usuários (mesma senha): vendas@${email.split("@")[1]} (Comercial), pcp@${email.split("@")[1]} (PCP), financeiro@${email.split("@")[1]} (Financeiro), apontamento@${email.split("@")[1]} (só apontamento)`);
 } catch (err) {
   await c.query("rollback").catch(() => {});
   console.error("Falhou:", err.message); process.exitCode = 1;

@@ -87,6 +87,29 @@ abrir `http://demo.localhost:3000`.
 - Fluxo do Início (out/2026): raias por área, caixas maiores e todas as setas contínuas; sem Inventário, Cotação e
   Recebimento (compras: solicitação → pedido de compra → estoque e contas a pagar).
 
+- Segundo lote de ajustes (out/2026):
+  - **Etapas do pedido** (`sales_stages`, Comercial › Configurações › Etapas do pedido): as 4 do sistema (Proposta, Aprovado,
+    Faturado, Cancelado) não se excluem, mas mudam de nome e cor; etapas novas têm um "comportamento" igual a uma delas
+    (ex.: Entregue = Faturado). `sales_orders.status` continua sendo o comportamento e `stage_id` a etapa mostrada
+    (`stageIdFor` em common.ts; `SO_STAGE` em queries.ts para pedidos sem etapa). Abas da lista = etapas.
+  - **Locais de entrega** (`delivery_places`) com pesquisa (`PlaceField`, `searchPlacesAction`): fábrica, endereço do
+    cliente e locais cadastrados; usado no pedido e no local da montagem. Pedido tem **"Tem montagem?"** (`has_assembly`).
+  - **Seleção por pesquisa em todo o sistema**: `Sel` (src/components/SearchPicker.tsx) troca `<select>` de cadastros
+    mantendo um select escondido (funciona em formulário e na barra de filtros). Listas fixas curtas continuam `<select>`.
+    Botão de pesquisa só com ícone (`.pick-btn`).
+  - **Botão atualizar** em toda barra de filtros e **colunas pelo botão direito** em toda tabela `.tbl`
+    (`ColumnMenu`, guarda no navegador; `<th data-hide>` = coluna extra escondida por padrão).
+  - Valores do pedido em R$ (`MoneyInput`).
+  - **Estrutura com operação** (`supply`: FABRICADO | ESTOQUE) no item e na OP; requisição só dos itens de estoque;
+    retiradas da OP não mostram a entrada de produção.
+  - **Apontamento de finalização** (`production_reports`, src/server/report-actions.ts, tela `/apontar`, lista em
+    Produção › Apontamentos; horas foram para `/apontamentos/horas`): produto final (soma no produzido + entrada no estoque),
+    peça/estrutura fabricada (avança a OP; não mexe no estoque) ou peça montada. Desfazer estorna.
+  - **Usuário só de apontamento**: perfil com `permissions.apontador` = fabrica | montagem | ambos (`access.pointer`);
+    vê só Apontar e Comunicação (`POINTER_NAV`).
+  - **Comunicação e avisos** (`messages`, `chat_reads`, `tasks`, `notifications`; src/server/comm-actions.ts, página
+    `/comunicacao`): chat geral e direto, tarefas, avisos e sininho na barra superior; botão "Avisar" no pedido, OP e montagem.
+
 ## Próximos passos sugeridos
 - Emissão real de NF-e (provedor) quando for necessário.
 - Importação de cadastros por planilha.

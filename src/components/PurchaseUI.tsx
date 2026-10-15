@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import { Sel } from "./SearchPicker";
 import { useMemo, useState } from "react";
 import { Icon } from "./Icon";
 import { Modal, useRun } from "./client";
@@ -100,7 +101,7 @@ export function QuotationEditor({ id, open, dueDate, notes, items: i0, suppliers
         <div className="fld"><label htmlFor="q_d">Responder até</label><input id="q_d" type="date" value={due} disabled={!open} onChange={(e) => { setDue(e.target.value); setDirty(true); }} /></div>
         <div className="fld span3"><label htmlFor="q_o">Observações</label><input id="q_o" value={obs} disabled={!open} onChange={(e) => { setObs(e.target.value); setDirty(true); }} /></div>
         {open && <div className="fld span2"><label htmlFor="q_s">Incluir fornecedor</label><div style={{ display: "flex", gap: 8 }}>
-          <select id="q_s" value={add} onChange={(e) => setAdd(e.target.value)}><option value="">Selecione…</option>{partners.filter(([v]) => !sups.some((s) => s.partnerId === v)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+          <Sel id="q_s" value={add} onChange={(e) => setAdd(e.target.value)}><option value="">Selecione…</option>{partners.filter(([v]) => !sups.some((s) => s.partnerId === v)).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel>
           <button type="button" className="btn" disabled={!add} onClick={() => { setSups([...sups, { key: k(), partnerId: add, freight: 0, paymentTerms: "", deliveryDays: null }]); setAdd(""); setDirty(true); }}>Incluir</button></div></div>}
         {open && <div className="fld" style={{ alignSelf: "end" }}><button type="button" className="btn" onClick={() => setPick(true)}><Icon name="search" size={15} /> Incluir itens</button></div>}
       </div></div>
@@ -186,7 +187,7 @@ export function PurchaseOrderEditor({ data, suppliers, methods, terms, canEdit }
     <div className="sheet">
       {received && <div className="infoline" style={{ margin: 0 }}>Pedido com recebimento registrado: itens e valores ficam travados. Você ainda pode receber o saldo.</div>}
       <div className="sheet-top"><div className="form f4">
-        <div className="fld span2"><label htmlFor="po_p">Fornecedor <span className="req">*</span></label><select id="po_p" value={d.partnerId} disabled={ro} onChange={(e) => set({ partnerId: e.target.value })}><option value="">Selecione…</option>{suppliers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld span2"><label htmlFor="po_p">Fornecedor <span className="req">*</span></label><Sel id="po_p" value={d.partnerId} disabled={ro} onChange={(e) => set({ partnerId: e.target.value })}><option value="">Selecione…</option>{suppliers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         <div className="fld span2"><span className="flabel">Situação</span>
           <div className="seg" role="group">{[["RASCUNHO", "Rascunho"], ["ENVIADO", "Enviado"], ["CANCELADO", "Cancelado"]].map(([v, l]) => <button key={v} type="button" aria-pressed={d.status === v} disabled={!canEdit || received} onClick={() => set({ status: v })}>{l}</button>)}
             {received && <button type="button" aria-pressed>{d.status === "RECEBIDO" ? "Recebido" : "Recebido parcial"}</button>}</div></div>
@@ -212,8 +213,8 @@ export function PurchaseOrderEditor({ data, suppliers, methods, terms, canEdit }
       <section className="panel sec-panel"><h2>Financeiro</h2><div className="pb"><div className="doc-bottom" style={{ marginTop: 0 }}>
         <div>
           <div className="form">
-            <div className="fld"><label htmlFor="po_f">Forma de pagamento</label><select id="po_f" value={d.paymentMethodId} disabled={ro} onChange={(e) => set({ paymentMethodId: e.target.value })}><option value="">Selecione…</option>{methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-            <div className="fld"><label htmlFor="po_t">Condição</label><select id="po_t" value={d.paymentTermId} disabled={ro} onChange={(e) => { set({ paymentTermId: e.target.value }); setManual(false); }}><option value="">28 dias</option>{terms.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select></div>
+            <div className="fld"><label htmlFor="po_f">Forma de pagamento</label><Sel id="po_f" value={d.paymentMethodId} disabled={ro} onChange={(e) => set({ paymentMethodId: e.target.value })}><option value="">Selecione…</option>{methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+            <div className="fld"><label htmlFor="po_t">Condição</label><Sel id="po_t" value={d.paymentTermId} disabled={ro} onChange={(e) => { set({ paymentTermId: e.target.value }); setManual(false); }}><option value="">28 dias</option>{terms.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Sel></div>
           </div>
           <div className="parc-h"><span className="flabel" style={{ margin: 0 }}>Parcelas previstas</span>{!ro && manual && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setManual(false)}>Recalcular</button>}</div>
           <table className="parc"><thead><tr><th>Nº</th><th>Vencimento</th><th className="num">Valor</th></tr></thead>
@@ -254,7 +255,7 @@ export function ReceiveButton({ poId, lines, locations, defaultLocation }: { poI
         <div className="form">
           <div className="fld"><label htmlFor="rc_n">Nota fiscal do fornecedor</label><input id="rc_n" value={f.invoice} onChange={(e) => setF({ ...f, invoice: e.target.value })} placeholder="Ex.: 4582" /></div>
           <div className="fld"><label htmlFor="rc_d">Data do recebimento</label><input id="rc_d" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
-          <div className="fld full"><label htmlFor="rc_l">Local de entrada</label><select id="rc_l" value={f.loc} onChange={(e) => setF({ ...f, loc: e.target.value })}>{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+          <div className="fld full"><label htmlFor="rc_l">Local de entrada</label><Sel id="rc_l" value={f.loc} onChange={(e) => setF({ ...f, loc: e.target.value })}>{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         </div>
         <div className="tbl solo" style={{ marginTop: 14 }}><table>
           <thead><tr><th>Item</th><th className="num">Pedido</th><th className="num">Já recebido</th><th className="num" style={{ width: 140 }}>Receber agora</th><th className="num">Custo unit.</th></tr></thead>

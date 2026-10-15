@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, gte, isNotNull, isNull, lte, sql, type SQL } from "drizzle-orm";
+import { Sel } from "@/components/SearchPicker";
 import { page } from "@/lib/access";
 import * as E from "@/db/erp";
 import { Empty, Kpi, PageHead, StatusBadge } from "@/components/ui";
@@ -69,9 +70,9 @@ export async function Timesheets({ searchParams }: { searchParams: Promise<SP> }
       <FilterBar right={<span className="count">{d.rows.length} registros</span>}>
         <label className="fl">De <input type="date" name="de" defaultValue={de} /></label>
         <label className="fl">até <input type="date" name="ate" defaultValue={ate} /></label>
-        <select name="pes" defaultValue={sp.pes ?? ""} aria-label="Pessoa"><option value="">Todas as pessoas</option>{d.members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</select>
-        <select name="cen" defaultValue={sp.cen ?? ""} aria-label="Centro"><option value="">Todos os centros</option>{d.centers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</select>
-        <select name="opf" defaultValue={sp.opf ?? ""} aria-label="OP" style={{ maxWidth: 220 }}><option value="">Todas as OPs</option>{d.ops.map((o) => <option key={o.id} value={o.id}>OP {o.n}</option>)}</select>
+        <Sel name="pes" defaultValue={sp.pes ?? ""} aria-label="Pessoa"><option value="">Todas as pessoas</option>{d.members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}</Sel>
+        <Sel name="cen" defaultValue={sp.cen ?? ""} aria-label="Centro"><option value="">Todos os centros</option>{d.centers.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Sel>
+        <Sel name="opf" defaultValue={sp.opf ?? ""} aria-label="OP" style={{ maxWidth: 220 }}><option value="">Todas as OPs</option>{d.ops.map((o) => <option key={o.id} value={o.id}>OP {o.n}</option>)}</Sel>
       </FilterBar>
       <div className="tbl">
         {d.rows.length ? (

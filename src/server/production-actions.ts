@@ -1,5 +1,5 @@
 "use server";
-import { and, asc, eq, ne, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, ne, sql } from "drizzle-orm";
 import { z } from "zod";
 import { act, NO_ACCESS } from "@/lib/access";
 import { audit } from "@/lib/audit";
@@ -16,7 +16,7 @@ const r4 = (v: number) => Math.round(v * 10000) / 10000;
 async function copyBom(tx: Tx, tenantId: string, opId: string, itemId: string, qty: number) {
   const bom = await tx.select().from(E.itemBom).where(eq(E.itemBom.itemId, itemId)).orderBy(asc(E.itemBom.position));
   if (bom.length) await tx.insert(E.productionOrderComponents).values(bom.map((b, i) => ({
-    tenantId, productionOrderId: opId, itemId: b.componentId, qtyRequired: String(r4(Number(b.qty) * qty * (1 + Number(b.lossPct) / 100))), fromBom: true, position: i,
+    tenantId, productionOrderId: opId, itemId: b.componentId, qtyRequired: String(r4(Number(b.qty) * qty * (1 + Number(b.lossPct) / 100))), supply: b.supply, fromBom: true, position: i,
   })));
   return bom.length;
 }
@@ -193,6 +193,13 @@ export async function setComponentDoneAction(id: string, qtyDone: number): Promi
   await s.tx((tx) => tx.update(E.productionOrderComponents).set({ qtyDone: String(qtyDone) }).where(eq(E.productionOrderComponents.id, id)));
   return { ok: true };
 }
+export async function setComponentSupplyAction(id: string, supply: "FABRICADO" | "ESTOQUE"): Promise<ActionState> {
+  const s = await act("producao");
+  if (!s) return NO_ACCESS;
+  if (supply !== "FABRICADO" && supply !== "ESTOQUE") return { error: "Operação inválida." };
+  await s.tx((tx) => tx.update(E.productionOrderComponents).set({ supply }).where(eq(E.productionOrderComponents.id, id)));
+  return { ok: true, message: supply === "FABRICADO" ? "Item marcado como fabricado na OP." : "Item marcado como retirada do estoque." };
+}
 export async function addComponentsAction(opId: string, rows: { itemId?: string | null; description?: string | null; qty: number }[]): Promise<ActionState> {
   const s = await act("producao");
   if (!s) return NO_ACCESS;
@@ -200,7 +207,11 @@ export async function addComponentsAction(opId: string, rows: { itemId?: string 
   if (!ok.length) return { error: "Informe o item e a quantidade." };
   await s.tx(async (tx) => {
     const [{ m }] = await tx.select({ m: sql<number>`coalesce(max(${E.productionOrderComponents.position}), 0)::int` }).from(E.productionOrderComponents).where(eq(E.productionOrderComponents.productionOrderId, opId));
-    await tx.insert(E.productionOrderComponents).values(ok.map((r, i) => ({ tenantId: s.tenant.id, productionOrderId: opId, itemId: r.itemId || null, description: r.itemId ? null : r.description!.trim().slice(0, 200), qtyRequired: String(r.qty), fromBom: false, position: m + i + 1 })));
+    const ids = ok.map((r) => r.itemId).filter(Boolean) as string[];
+    const types = new Map(ids.length ? (await tx.select({ id: E.items.id, t: E.items.type }).from(E.items).where(inArray(E.items.id, ids))).map((x) => [x.id, String(x.t)]) : []);
+    // semiacabado e produto acabado: fabricado na OP; o resto sai do estoque; item sem cadastro é feito na OP
+    const sup = (id?: string | null) => (!id || ["SEMIACABADO", "PRODUTO_ACABADO"].includes(types.get(id) ?? "") ? "FABRICADO" : "ESTOQUE");
+    await tx.insert(E.productionOrderComponents).values(ok.map((r, i) => ({ tenantId: s.tenant.id, productionOrderId: opId, itemId: r.itemId || null, description: r.itemId ? null : r.description!.trim().slice(0, 200), qtyRequired: String(r.qty), supply: sup(r.itemId), fromBom: false, position: m + i + 1 })));
   });
   return { ok: true, message: ok.length === 1 ? "Item incluído na OP." : `${ok.length} itens incluídos na OP.` };
 }
@@ -268,14 +279,20 @@ export async function reportOutputAction(input: z.input<typeof outSchema>): Prom
       if (!op) throw new RuleError("OP não encontrada.");
       const left = Number(op.qty) - Number(op.qtyProduced);
       if (d.qty > left + 1e-9) throw new RuleError(`A OP pede ${Number(op.qty).toLocaleString("pt-BR")} e já tem ${Number(op.qtyProduced).toLocaleString("pt-BR")} produzidas. Faltam ${left.toLocaleString("pt-BR")}.`);
-      await tx.insert(E.productionOutputs).values({ tenantId: s.tenant.id, productionOrderId: op.id, date: d.date, qty: String(d.qty), locationId: d.toStock ? d.locationId : null, notes: d.notes?.trim() || null, userName: s.user.name });
+      const [out] = await tx.insert(E.productionOutputs).values({ tenantId: s.tenant.id, productionOrderId: op.id, date: d.date, qty: String(d.qty), locationId: d.toStock ? d.locationId : null, notes: d.notes?.trim() || null, userName: s.user.name }).returning({ id: E.productionOutputs.id });
+      let movementId: string | null = null;
       await tx.update(E.productionOrders).set({ qtyProduced: sql`${E.productionOrders.qtyProduced} + ${d.qty}` }).where(eq(E.productionOrders.id, op.id));
       if (d.toStock) {
         const c = await opCosts(tx, op);
         const unit = c.real.total > 0 && Number(op.qty) > 0 ? c.real.total / Number(op.qty) : (await avgCosts(tx, [op.itemId])).get(op.itemId) ?? 0;
-        await insertMovements(tx, s.tenant.id, [{ date: d.date, type: "PRODUCAO", itemId: op.itemId, locationId: d.locationId!, qty: String(d.qty), unitCost: String(Math.round(unit * 10000) / 10000),
+        const [mv] = await insertMovements(tx, s.tenant.id, [{ date: d.date, type: "PRODUCAO", itemId: op.itemId, locationId: d.locationId!, qty: String(d.qty), unitCost: String(Math.round(unit * 10000) / 10000),
           document: `OP ${op.number}`, notes: d.notes?.trim() || "Entrada de produção", productionOrderId: op.id, userName: s.user.name }]);
+        movementId = mv?.id ?? null;
       }
+      // fica também na lista de apontamentos de finalização
+      const [it] = await tx.select({ n: E.items.name }).from(E.items).where(eq(E.items.id, op.itemId));
+      await tx.insert(E.productionReports).values({ tenantId: s.tenant.id, kind: "FABRICA", date: d.date, productionOrderId: op.id, itemId: op.itemId, description: it?.n ?? "Produto", qty: String(d.qty),
+        outputId: out.id, movementId, notes: d.notes?.trim() || null, userId: s.user.id, userName: s.user.name });
       return `${d.qty.toLocaleString("pt-BR")} ${d.qty === 1 ? "unidade apontada" : "unidades apontadas"} na OP ${op.number}${d.toStock ? " e lançadas no estoque" : ""}.`;
     });
     return { ok: true, message: msg };

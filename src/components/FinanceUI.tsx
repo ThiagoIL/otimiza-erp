@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { Sel } from "./SearchPicker";
 import { usePathname, useRouter } from "next/navigation";
 import { Icon } from "./Icon";
 import { Modal, useRun } from "./client";
@@ -37,15 +38,15 @@ export function TitleModal({ t, o, onClose }: { t: Title; o: FinOpts; onClose: (
       {d.status === "PAGO" && <div className="infoline" style={{ borderLeftColor: "var(--ok)" }}>{R ? "Recebido" : "Pago"} em {fmtD(d.paidAt)} · {brl(d.paidAmount ?? d.amount)} · {o.accounts.find(([v]) => v === d.bankAccountId)?.[1] ?? ""}</div>}
       <div className="form">
         <div className="fld full"><label htmlFor="t_d">Descrição <span className="req">*</span></label><input id="t_d" value={d.description} onChange={(e) => set({ description: e.target.value })} autoFocus={!d.id} /></div>
-        <div className="fld"><label htmlFor="t_p">{R ? "Cliente" : "Fornecedor"}</label><select id="t_p" value={d.partnerId} disabled={locked} onChange={(e) => set({ partnerId: e.target.value })}><option value="">Nenhum</option>{o.partners.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        <div className="fld"><label htmlFor="t_c">Categoria</label><select id="t_c" value={d.categoryId} onChange={(e) => set({ categoryId: e.target.value })}><option value="">Sem categoria</option>{o.categories.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld"><label htmlFor="t_p">{R ? "Cliente" : "Fornecedor"}</label><Sel id="t_p" value={d.partnerId} disabled={locked} onChange={(e) => set({ partnerId: e.target.value })}><option value="">Nenhum</option>{o.partners.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+        <div className="fld"><label htmlFor="t_c">Categoria</label><Sel id="t_c" value={d.categoryId} onChange={(e) => set({ categoryId: e.target.value })}><option value="">Sem categoria</option>{o.categories.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         <div className="fld"><label htmlFor="t_v">Valor (R$) <span className="req">*</span></label><input id="t_v" type="number" step="any" min={0} value={d.amount || ""} disabled={locked} onChange={(e) => set({ amount: Number(e.target.value) || 0 })} /></div>
         <div className="fld"><label htmlFor="t_ve">Vencimento <span className="req">*</span></label><input id="t_ve" type="date" value={d.dueDate} onChange={(e) => set({ dueDate: e.target.value })} /></div>
         <div className="fld"><label htmlFor="t_e">Emissão</label><input id="t_e" type="date" value={d.issueDate} disabled={locked} onChange={(e) => set({ issueDate: e.target.value })} /></div>
         <div className="fld"><label htmlFor="t_doc">Documento</label><input id="t_doc" value={d.document} onChange={(e) => set({ document: e.target.value })} placeholder="NF, boleto, contrato…" /></div>
-        <div className="fld"><label htmlFor="t_f">Forma de pagamento</label><select id="t_f" value={d.paymentMethodId} onChange={(e) => set({ paymentMethodId: e.target.value })}><option value="">—</option>{o.methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        <div className="fld"><label htmlFor="t_s">Situação</label><select id="t_s" value={d.situationId} onChange={(e) => set({ situationId: e.target.value })}><option value="">—</option>{o.situations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        <div className="fld"><label htmlFor="t_r">Responsável</label><select id="t_r" value={d.responsibleId} onChange={(e) => set({ responsibleId: e.target.value })}><option value="">—</option>{o.responsibles.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld"><label htmlFor="t_f">Forma de pagamento</label><Sel id="t_f" value={d.paymentMethodId} onChange={(e) => set({ paymentMethodId: e.target.value })}><option value="">—</option>{o.methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+        <div className="fld"><label htmlFor="t_s">Situação</label><Sel id="t_s" value={d.situationId} onChange={(e) => set({ situationId: e.target.value })}><option value="">—</option>{o.situations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+        <div className="fld"><label htmlFor="t_r">Responsável</label><Sel id="t_r" value={d.responsibleId} onChange={(e) => set({ responsibleId: e.target.value })}><option value="">—</option>{o.responsibles.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         {!d.id && <div className="fld"><label htmlFor="t_rep">Repetir mensalmente</label><input id="t_rep" type="number" min={1} max={60} value={rep} onChange={(e) => setRep(Math.max(1, Math.min(60, Number(e.target.value) || 1)))} /><small>Meses, incluindo este. Útil para aluguel, energia e folha.</small></div>}
         <div className="fld full"><label htmlFor="t_o">Observações</label><textarea id="t_o" rows={2} value={d.notes} onChange={(e) => set({ notes: e.target.value })} /></div>
       </div>
@@ -65,8 +66,8 @@ export function PayModal({ t, o, onClose }: { t: Title; o: FinOpts; onClose: () 
       <div className="form">
         <div className="fld"><label htmlFor="b_d">Data</label><input id="b_d" type="date" value={f.paidAt} onChange={(e) => setF({ ...f, paidAt: e.target.value })} /></div>
         <div className="fld"><label htmlFor="b_v">Valor (R$)</label><input id="b_v" inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></div>
-        <div className="fld full"><label htmlFor="b_c">Conta</label><select id="b_c" value={f.account} onChange={(e) => setF({ ...f, account: e.target.value })}>{o.accounts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        <div className="fld full"><label htmlFor="b_f">Forma</label><select id="b_f" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}><option value="">—</option>{o.methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld full"><label htmlFor="b_c">Conta</label><Sel id="b_c" value={f.account} onChange={(e) => setF({ ...f, account: e.target.value })}>{o.accounts.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+        <div className="fld full"><label htmlFor="b_f">Forma</label><Sel id="b_f" value={f.method} onChange={(e) => setF({ ...f, method: e.target.value })}><option value="">—</option>{o.methods.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
       </div>
     </Modal>
   );
@@ -135,7 +136,7 @@ export function BankButtons({ accountId, accounts }: { accountId: string; accoun
           }}>Registrar</button></>}>
         <div className="form">
           {open === "lanc" && <div className="fld full"><div className="seg"><button type="button" aria-pressed={f.sign === "-"} onClick={() => setF({ ...f, sign: "-" })}>Saída</button><button type="button" aria-pressed={f.sign === "+"} onClick={() => setF({ ...f, sign: "+" })}>Entrada</button></div></div>}
-          {open === "transf" && <div className="fld full"><label htmlFor="tr_to">Conta de destino</label><select id="tr_to" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })}><option value="">Selecione…</option>{accounts.filter(([v]) => v !== accountId).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
+          {open === "transf" && <div className="fld full"><label htmlFor="tr_to">Conta de destino</label><Sel id="tr_to" value={f.to} onChange={(e) => setF({ ...f, to: e.target.value })}><option value="">Selecione…</option>{accounts.filter(([v]) => v !== accountId).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>}
           <div className="fld"><label htmlFor="bk_d">Data</label><input id="bk_d" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
           <div className="fld"><label htmlFor="bk_v">Valor (R$)</label><input id="bk_v" inputMode="decimal" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></div>
           <div className="fld full"><label htmlFor="bk_x">Descrição</label><input id="bk_x" value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} placeholder={open === "lanc" ? "Tarifa bancária, rendimento, ajuste…" : "Transferência entre contas"} /></div>

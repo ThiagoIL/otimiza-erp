@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Sel } from "./SearchPicker";
 import Link from "next/link";
 import { Icon } from "./Icon";
 import { ActionButton, useRun } from "./client";
@@ -30,7 +31,7 @@ export function ItemSuppliers({ itemId, rows, suppliers, canEdit }: { itemId: st
       {canEdit && (
         <div className="pb" style={{ borderTop: "1px solid var(--line-2)" }}>
           <div className="form f4">
-            <div className="fld span2"><label htmlFor="sp_p">Fornecedor</label><select id="sp_p" value={f.partnerId} onChange={(e) => setF({ ...f, partnerId: e.target.value })}><option value="">Selecione…</option>{suppliers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+            <div className="fld span2"><label htmlFor="sp_p">Fornecedor</label><Sel id="sp_p" value={f.partnerId} onChange={(e) => setF({ ...f, partnerId: e.target.value })}><option value="">Selecione…</option>{suppliers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
             <div className="fld"><label htmlFor="sp_c">Código no fornecedor</label><input id="sp_c" value={f.supplierCode} onChange={(e) => setF({ ...f, supplierCode: e.target.value })} /></div>
             <div className="fld"><label htmlFor="sp_v">Último preço (R$)</label><input id="sp_v" inputMode="decimal" value={f.lastPrice} onChange={(e) => setF({ ...f, lastPrice: e.target.value })} /></div>
             <div className="fld"><label htmlFor="sp_d">Prazo (dias)</label><input id="sp_d" inputMode="numeric" value={f.leadDays} onChange={(e) => setF({ ...f, leadDays: e.target.value })} /></div>

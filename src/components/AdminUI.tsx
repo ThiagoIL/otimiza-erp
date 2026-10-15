@@ -46,6 +46,14 @@ function ProfileModal({ p, onClose }: { p: Profile; onClose: () => void }) {
         <div className="fld"><label htmlFor="pf_n">Nome do perfil <span className="req">*</span></label><input id="pf_n" value={d.name} onChange={(e) => setD({ ...d, name: e.target.value })} autoFocus /></div>
         <div className="fld"><label htmlFor="pf_d">Descrição</label><input id="pf_d" value={d.description} onChange={(e) => setD({ ...d, description: e.target.value })} /></div>
       </div>
+      <div className="form" style={{ marginTop: 8 }}>
+        <div className="fld full"><label htmlFor="pf_ap">Usuário só de apontamento</label>
+          <select id="pf_ap" value={String(d.permissions.apontador ?? "")} onChange={(e) => setPerm("apontador", e.target.value as Level)}>
+            <option value="">Não: usa os módulos abaixo</option><option value="fabrica">Sim: apontamento da fábrica</option><option value="montagem">Sim: apontamento da montagem</option><option value="ambos">Sim: fábrica e montagem</option>
+          </select>
+          <small>O usuário de apontamento entra direto numa tela simples (boa para celular ou tablet) e só aponta o que ficou pronto. Também recebe avisos e tarefas.</small></div>
+      </div>
+      {!d.permissions.apontador && <>
       <h3 className="sec">Permissões por módulo</h3>
       <div className="tbl solo"><table className="pmx">
         <thead><tr><th>Módulo</th>{(Object.keys(LEVEL_LABEL) as Level[]).map((l) => <th key={l} style={{ textAlign: "center" }}>{LEVEL_LABEL[l]}</th>)}</tr></thead>
@@ -53,6 +61,7 @@ function ProfileModal({ p, onClose }: { p: Profile; onClose: () => void }) {
           <tr key={k}><td><b>{l}</b></td>{(Object.keys(LEVEL_LABEL) as Level[]).map((v) => <td key={v} style={{ textAlign: "center" }}><input type="radio" name={`pm_${k}`} checked={(d.permissions[k] ?? "nenhum") === v} onChange={() => setPerm(k, v)} aria-label={`${l}: ${LEVEL_LABEL[v]}`} /></td>)}</tr>))}</tbody>
       </table></div>
       <label className="chk" style={{ marginTop: 14 }}><input type="checkbox" checked={d.permissions.custos === true} onChange={(e) => setPerm("custos", e.target.checked)} /> Pode ver custos de produção (custo da OP, custo de mão de obra e custo padrão da estrutura)</label>
+      </>}
       <p className="muted" style={{ fontSize: 12.5 }}>O Início fica sempre visível. A Administração (usuários, perfis e dados da empresa) é exclusiva dos administradores da empresa.</p>
     </Modal>
   );

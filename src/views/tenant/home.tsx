@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import { and, eq, sql } from "drizzle-orm";
 import { page } from "@/lib/access";
 import * as E from "@/db/erp";
@@ -73,7 +74,7 @@ async function buildAlerts(s: Awaited<ReturnType<typeof page>>): Promise<Alert[]
       const pend = await tx.execute<{ id: string; name: string; c: number }>(sql`select a.id, a.name, count(*)::int c from assembly_locations l join assembly_stages st on st.id = l.stage_id join assemblies a on a.id = l.assembly_id where st.kind = 'pendencia' and a.completed_at is null group by a.id, a.name`);
       for (const p of pend.rows) A.push({ mod: "producao", sev: 1, icon: "truck", t: `${p.c} ${p.c === 1 ? "local com pendência" : "locais com pendência"}`, s: p.name, href: `/montagens/${p.id}`, k: p.c });
       const [{ ap }] = await tx.select({ ap: sql<number>`count(*)::int` }).from(E.timeEntries).where(sql`${E.timeEntries.end} is null and ${E.timeEntries.date} < ${hoje}`);
-      if (ap) A.push({ mod: "producao", sev: 1, icon: "clock", t: `${ap} ${ap === 1 ? "apontamento ficou aberto" : "apontamentos ficaram abertos"} de dias anteriores`, s: "Encerre com o horário real de saída", href: "/apontamentos", k: ap });
+      if (ap) A.push({ mod: "producao", sev: 1, icon: "clock", t: `${ap} ${ap === 1 ? "apontamento ficou aberto" : "apontamentos ficaram abertos"} de dias anteriores`, s: "Encerre com o horário real de saída", href: "/apontamentos/horas", k: ap });
     }
     if (can("estoque") || can("itens")) {
       const items = await tx.select({ id: E.items.id, name: E.items.name, min: E.items.minStock, unit: E.items.unit }).from(E.items).where(sql`${E.items.active} and ${E.items.minStock} > 0`);
@@ -126,6 +127,7 @@ async function buildAlerts(s: Awaited<ReturnType<typeof page>>): Promise<Alert[]
 
 export async function TenantHome() {
   const s = await page(null);
+  if (s.access.pointer) redirect("/apontar");
   const alerts = await buildAlerts(s);
   const can = (m: ModuleKey) => s.access.mods[m] !== "nenhum";
   const mods = ([["producao", "Produção"], ["estoque", "Estoque"], ["comercial", "Comercial"], ["compras", "Compras"], ["financeiro", "Financeiro"]] as [ModuleKey, string][]).filter(([k]) => can(k) || (k === "estoque" && can("itens")));

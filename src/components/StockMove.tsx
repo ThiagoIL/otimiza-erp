@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { Icon } from "./Icon";
 import { Modal, useRun } from "./client";
 import { ItemPicker } from "./ItemPicker";
-import { PickField } from "./SearchPicker";
+import { PickField, Sel } from "./SearchPicker";
 import { searchOrdersAction } from "@/server/search-actions";
 import { createMovementAction, itemStockInfoAction } from "@/server/stock-actions";
 import { today } from "@/lib/dates";
@@ -49,19 +49,19 @@ export function StockMoveModal({ type: t0, item, locations, suppliers, ops, opId
         <div className="fld full"><span className="flabel">Item <span className="req">*</span></span>
           <div style={{ display: "flex", gap: 8 }}>
             <input value={it?.label ?? ""} readOnly placeholder="Nenhum item escolhido" onClick={() => setPick(true)} style={{ cursor: "pointer" }} aria-label="Item" />
-            <button type="button" className="btn" onClick={() => setPick(true)}><Icon name="search" size={15} /> Pesquisar</button>
+            <button type="button" className="btn btn-icon pick-btn" onClick={() => setPick(true)} title="Pesquisar item" aria-label="Pesquisar item"><Icon name="search" size={15} /></button>
           </div>
         </div>
         <div className="fld"><label htmlFor="m_l">{type === "ENTRADA" ? "Local de entrada" : type === "TRANSFERENCIA" ? "Local de origem" : "Local"}</label>
-          <select id="m_l" value={f.locationId} onChange={(e) => setF({ ...f, locationId: e.target.value })}>{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        {type === "TRANSFERENCIA" && <div className="fld"><label htmlFor="m_d">Local de destino</label><select id="m_d" value={f.destLocationId} onChange={(e) => setF({ ...f, destLocationId: e.target.value })}><option value="">Selecione…</option>{locations.filter(([v]) => v !== f.locationId).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
+          <Sel id="m_l" value={f.locationId} onChange={(e) => setF({ ...f, locationId: e.target.value })}>{locations.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
+        {type === "TRANSFERENCIA" && <div className="fld"><label htmlFor="m_d">Local de destino</label><Sel id="m_d" value={f.destLocationId} onChange={(e) => setF({ ...f, destLocationId: e.target.value })}><option value="">Selecione…</option>{locations.filter(([v]) => v !== f.locationId).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>}
         {info && <div className="saldo-box"><span>Saldo neste local<br /><b>{q(bal)} {info.unit}</b></span><span>Saldo total<br /><b>{q(total)} {info.unit}</b></span><span>Custo médio<br /><b>{brl(info.cost)}</b></span>
           {type === "AJUSTE" && f.qty !== "" && <span>Diferença<br /><b>{n - bal > 0 ? "+" : ""}{q(n - bal)}</b></span>}</div>}
         <div className="fld"><label htmlFor="m_q">{type === "AJUSTE" ? "Quantidade contada" : "Quantidade"} <span className="req">*</span></label><input id="m_q" inputMode="decimal" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /></div>
         {type === "ENTRADA" && <div className="fld"><label htmlFor="m_c">Custo unitário (R$)</label><input id="m_c" inputMode="decimal" value={f.unitCost} onChange={(e) => setF({ ...f, unitCost: e.target.value })} /></div>}
         <div className="fld"><label htmlFor="m_dt">Data</label><input id="m_dt" type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></div>
         <div className="fld"><label htmlFor="m_doc">Documento</label><input id="m_doc" value={f.document} onChange={(e) => setF({ ...f, document: e.target.value })} placeholder="NF, requisição…" /></div>
-        {type === "ENTRADA" && suppliers && <div className="fld full"><label htmlFor="m_p">Fornecedor</label><select id="m_p" value={f.partnerId} onChange={(e) => setF({ ...f, partnerId: e.target.value })}><option value="">Não informado</option>{suppliers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>}
+        {type === "ENTRADA" && suppliers && <div className="fld full"><label htmlFor="m_p">Fornecedor</label><Sel id="m_p" value={f.partnerId} onChange={(e) => setF({ ...f, partnerId: e.target.value })}><option value="">Não informado</option>{suppliers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>}
         {(type === "SAIDA" || type === "TRANSFERENCIA") && ops && (
           <PickField id="m_op" className="fld full" label="Para qual ordem de produção" value={op} disabled={!!opId} emptyText="Nenhuma (consumo geral)"
             hint="A saída fica registrada como material retirado para a OP."
