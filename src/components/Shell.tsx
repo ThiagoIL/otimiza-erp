@@ -15,8 +15,8 @@ export function initials(name: string) {
 }
 
 /** Moldura do sistema: menu lateral por módulo (como no protótipo), barra superior e avisos. */
-export function Shell({ nav, context, user, roleLabel, readOnly, bell, children }: {
-  nav: NavModule[]; context?: string; user: { name: string; email: string }; roleLabel: string;
+export function Shell({ nav, context, logo, user, roleLabel, readOnly, bell, children }: {
+  nav: NavModule[]; context?: string; /** endereço da logo da empresa */ logo?: string | null; user: { name: string; email: string }; roleLabel: string;
   /** sininho de avisos (só nas empresas) */
   bell?: boolean;
   /** módulos em que o usuário só consulta */
@@ -34,7 +34,7 @@ export function Shell({ nav, context, user, roleLabel, readOnly, bell, children 
     <div className={`app${open ? " open" : ""}`}>
       <aside className="rail" aria-label="Menu principal">
         <div className="brand"><Link href="/" aria-label="Início"><LogoLockup height={18} dark /></Link></div>
-        {context && <div className="ctx"><span>Empresa</span><b>{context}</b></div>}
+        {context && <div className={`ctx${logo ? " has-logo" : ""}`}>{logo && <span className="ctx-logo"><img src={logo} alt="" /></span>}<span>Empresa</span><b>{context}</b></div>}
         <nav className="nav">
           {nav.map((m) => {
             const active = cur?.mod.id === m.id;

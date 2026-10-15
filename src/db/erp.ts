@@ -77,6 +77,10 @@ export const companySettings = pgTable("company_settings", {
   city: text("city"),
   cityCode: text("city_code"),
   uf: text("uf"),
+  /** logo da empresa (PNG, JPG ou WebP em base64), mostrada no menu e nos documentos impressos */
+  logo: text("logo"),
+  logoMime: text("logo_mime"),
+  logoAt: ts("logo_at"),
   /** versão dos cadastros padrão já criados para a empresa */
   defaultsVersion: integer("defaults_version").notNull().default(0),
 }, (t) => [tid("company_settings_tid_uq", t), uniqueIndex("company_settings_tenant_uq").on(t.tenantId)]);

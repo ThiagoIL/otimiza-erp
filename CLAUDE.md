@@ -116,6 +116,11 @@ abrir `http://demo.localhost:3000`.
   o máximo de pessoas conectadas (a mesma pessoa em outro aparelho não ocupa vaga). Conectado = sessão válida usada dentro
   de SESSION_IDLE_MINUTES. O administrador da empresa vê o uso e desconecta pessoas em Administração › Usuários.
 
+- **Logo da empresa** (out/2026): enviada pelo administrador em Administração › Empresa; fica em `company_settings.logo`
+  (base64, PNG/JPG/WebP até 1 MB, conferido pelo conteúdo; SVG não é aceito). Rota `/api/logo` (GET para quem está
+  conectado, POST/DELETE só administrador). Aparece no menu lateral (`Shell` prop `logo`) e no topo dos impressos
+  (`companyHeader().logo` em data URI, usado pelo `DocReport`).
+
 ## Próximos passos sugeridos
 - Emissão real de NF-e (provedor) quando for necessário.
 - Importação de cadastros por planilha.

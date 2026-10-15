@@ -64,6 +64,13 @@
       "when": 1792075600775,
       "tag": "0008_limites_de_usuarios",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792077386867,
+      "tag": "0009_logo_da_empresa",
+      "breakpoints": true
     }
   ]
 }

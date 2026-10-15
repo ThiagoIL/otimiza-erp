@@ -166,7 +166,7 @@ export async function companyHeader(tx: Tx, fallbackName: string) {
   const [c] = await tx.select().from(E.companySettings).limit(1);
   const name = c?.tradeName || c?.legalName || fallbackName;
   const line = [c?.legalName && c.legalName !== name ? c.legalName : null, c?.document ? `CNPJ ${c.document}` : null, c?.city ? `${c.city}/${c.uf ?? ""}` : null, c?.phone].filter(Boolean).join(" · ");
-  return { name, line: line || fallbackName };
+  return { name, line: line || fallbackName, logo: c?.logo && c.logoMime ? `data:${c.logoMime};base64,${c.logo}` : null };
 }
 
 export function partnerAddress(p: { street: string | null; number: string | null; district: string | null; city: string | null; uf: string | null; zip: string | null }) {
@@ -184,4 +184,10 @@ export async function stageIdFor(tx: Tx, status: string, current?: string | null
   }
   const [st] = await tx.select({ id: E.salesStages.id }).from(E.salesStages).where(and(eq(E.salesStages.kind, status), eq(E.salesStages.system, true))).limit(1);
   return st?.id ?? null;
+}
+
+/** Endereço da logo da empresa (com a versão, para o navegador buscar de novo quando trocar), ou null. */
+export async function logoUrl(tenantId: string): Promise<string | null> {
+  const [c] = await withTenant(tenantId, (tx) => tx.select({ at: E.companySettings.logoAt }).from(E.companySettings).limit(1));
+  return c?.at ? `/api/logo?v=${c.at.getTime()}` : null;
 }

@@ -6,7 +6,7 @@ import { fmtD } from "@/lib/dates";
 
 export type ReportData = {
   title: string; status?: string; back: { href: string; label: string };
-  company: { name: string; line: string };
+  company: { name: string; line: string; logo?: string | null };
   partnerLabel: string; partner: { name: string; trade?: string | null; doc?: string | null; address?: string; contact?: string };
   dates: [string, string | null][]; payment: string[];
   items: { code: string; name: string; unit: string; qty: number; price: number; discountPct: number; notes?: string | null }[];
@@ -24,7 +24,7 @@ export function DocReport({ r }: { r: ReportData }) {
       <div className="paper">
         <div className="rep">
           <header className="rep-h">
-            <div><div className="rep-brand">{r.company.name}</div><small>{r.company.line} · gerado em {fmtD(new Date().toISOString().slice(0, 10))}</small></div>
+            <div className="rep-co">{r.company.logo && <img className="rep-logo" src={r.company.logo} alt="" />}<div><div className="rep-brand">{r.company.name}</div><small>{r.company.line} · gerado em {fmtD(new Date().toISOString().slice(0, 10))}</small></div></div>
             <div className="rep-t"><h2>{r.title}</h2>{r.status && <span>{r.status}</span>}</div>
           </header>
           <section className="rep-grid">

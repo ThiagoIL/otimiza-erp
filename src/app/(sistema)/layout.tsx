@@ -4,7 +4,7 @@ import { Shell } from "@/components/Shell";
 import { adminSession, currentTenant, requestArea, tenantSession } from "@/lib/context";
 import { accessOf } from "@/lib/access";
 import { ADMIN_NAV, POINTER_NAV, TENANT_NAV } from "@/lib/modules";
-import { ensureDefaults } from "@/server/common";
+import { ensureDefaults, logoUrl } from "@/server/common";
 import { ROLE_LABEL } from "@/lib/rules";
 import type { Tenant } from "@/db/schema";
 
@@ -37,7 +37,7 @@ export default async function SistemaLayout({ children }: { children: React.Reac
     const readOnly = Object.entries(access.mods).filter(([, l]) => l === "ver").map(([k]) => k);
     return (
       <Suspense>
-        <Shell nav={nav} context={t.name} user={s.user} readOnly={readOnly} bell
+        <Shell nav={nav} context={t.name} logo={await logoUrl(t.id)} user={s.user} readOnly={readOnly} bell
           roleLabel={access.profileName && !access.isAdmin ? access.profileName : ROLE_LABEL[s.user.role]}>
           {children}
         </Shell>

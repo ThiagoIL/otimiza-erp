@@ -6,6 +6,7 @@ import * as E from "@/db/erp";
 import { PageHead } from "@/components/ui";
 import { ProfilesTable } from "@/components/AdminUI";
 import { Field, Form, Submit } from "@/components/Form";
+import { LogoUpload } from "@/components/LogoUpload";
 import { saveCompanyAction } from "@/server/admin-tenant-actions";
 import { UFS } from "@/components/ui";
 import { REGIMES } from "@/lib/consts";
@@ -28,6 +29,9 @@ export async function CompanyPage() {
   return (
     <>
       <PageHead title="Empresa" sub="Dados da empresa usados no cabeçalho das propostas, pedidos e documentos impressos." />
+      <section className="panel sec-panel" style={{ marginBottom: 16 }}><h2>Logo da empresa</h2><div className="pb">
+        <LogoUpload src={c?.logo ? `/api/logo?v=${c.logoAt?.getTime() ?? 0}` : null} />
+      </div></section>
       <Form action={saveCompanyAction} className="sheet">
         <section className="panel sec-panel"><h2>Empresa</h2><div className="pb"><div className="form f4">
           <Field name="razao" label="Razão social" defaultValue={c?.legalName ?? s.tenant.name} full />
