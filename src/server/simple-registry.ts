@@ -30,6 +30,8 @@ export type SEntity = {
   guard?: (tx: Tx, id: string) => Promise<string | null>;
 };
 
+const PO_KINDS: Opt[] = [["RASCUNHO", "Em preparação (antes de enviar ao fornecedor)"], ["ENVIADO", "Enviado (aguardando o fornecedor: produção, beneficiamento, transporte…)"], ["RECEBIDO", "Recebido (chega aqui ao registrar o recebimento)"], ["CANCELADO", "Cancelado"]];
+const FIELD_TYPES: Opt[] = [["texto", "Texto"], ["numero", "Número"], ["data", "Data"], ["lista", "Lista de opções"], ["sim_nao", "Sim ou não"]];
 const SO_KINDS: Opt[] = [["PROPOSTA", "Proposta (ainda não aprovada)"], ["APROVADO", "Aprovado (vai para a produção)"], ["FATURADO", "Faturado (depois da nota)"], ["CANCELADO", "Cancelado"]];
 
 /** Caminho completo de cada grupo ("Toalha › Algodão"), para mostrar o grupo pai. */
@@ -125,6 +127,40 @@ export const SIMPLE: Record<string, SEntity> = {
       const [cur] = await tx.select({ system: E.salesStages.system }).from(E.salesStages).where(eq(E.salesStages.id, id)).limit(1);
       return cur?.system ? "Esta etapa é do sistema e não pode ser excluída. Você pode mudar o nome e a cor." : null;
     },
+  },
+  "etapas-compra": {
+    mod: "compras", table: t(E.purchaseStages), title: "Etapas do pedido de compra", sub: "Colunas do quadro de pedidos de compra, na ordem definida aqui. As quatro do sistema não podem ser excluídas, mas você pode mudar o nome e a cor e criar outras, como “Em cotação”, “Em produção”, “Beneficiamento” ou “Transportadora”.", one: "etapa", fem: true, autoPos: true,
+    fields: [{ k: "name", label: "Nome da etapa", req: true }, { k: "position", label: "Ordem no quadro", t: "int", req: true },
+      { k: "kind", label: "Comportamento", t: "select", req: true, full: true, def: "ENVIADO", opts: PO_KINDS, hint: "Define as regras: em Recebido o pedido só chega pelo recebimento (estoque e contas a pagar); Cancelado não pode ter recebimento." },
+      { k: "color", label: "Cor", t: "color", full: true, def: "#1E3A5F" }, { k: "active", label: "Etapa ativa", t: "check", def: true }],
+    cols: [{ k: "position", label: "Ordem", f: "num" }, { k: "name", label: "Etapa", f: "color" }, { k: "kind", label: "Comportamento", f: "opt" }, { k: "active", label: "Situação", f: "active" }],
+    counts: [{ k: "system", label: "Do sistema", sql: sql`purchase_stages.system`, f: "active" }, { k: "n", label: "Pedidos", sql: sql`(select count(*)::int from purchase_orders o where o.stage_id = purchase_stages.id)`, f: "num" }],
+    uses: [[E.purchaseOrders, E.purchaseOrders.stageId, "Há pedidos de compra nesta etapa. Mude a etapa deles antes de excluir, ou marque como inativa."]],
+    order: () => asc(E.purchaseStages.position),
+    check: async (tx, v, id) => {
+      if (!id) return null;
+      const [cur] = await tx.select().from(E.purchaseStages).where(eq(E.purchaseStages.id, id)).limit(1);
+      if (cur?.system && v.kind !== cur.kind) return "O comportamento das etapas do sistema não pode ser trocado. Crie uma etapa nova.";
+      if (cur?.system && v.active === false) return "As etapas do sistema não podem ser inativadas.";
+      if (cur && !cur.system && v.kind !== cur.kind) {
+        const [{ c }] = await tx.select({ c: sql<number>`count(*)::int` }).from(E.purchaseOrders).where(eq(E.purchaseOrders.stageId, id));
+        if (c) return "Há pedidos nesta etapa: o comportamento não pode ser trocado.";
+      }
+      return null;
+    },
+    guard: async (tx, id) => {
+      const [cur] = await tx.select({ system: E.purchaseStages.system }).from(E.purchaseStages).where(eq(E.purchaseStages.id, id)).limit(1);
+      return cur?.system ? "Esta etapa é do sistema e não pode ser excluída. Você pode mudar o nome e a cor." : null;
+    },
+  },
+  "campos-compra": {
+    mod: "compras", table: t(E.customFields), title: "Campos personalizados do pedido de compra", sub: "Informações extras do pedido de compra, como Beneficiadora, Centro de custo ou Tratamento. Marque “Mostrar no cartão” para ver o campo no quadro.", one: "campo", autoPos: true,
+    fields: [{ k: "label", label: "Nome do campo", req: true, full: true }, { k: "type", label: "Tipo", t: "select", req: true, def: "lista", opts: FIELD_TYPES },
+      { k: "position", label: "Ordem", t: "int", req: true }, { k: "options", label: "Opções da lista", t: "list", full: true, hint: "Só para o tipo lista. Separe com ponto e vírgula. Ex.: ANOD PRETO (A13); NATURAL; PINTURA BRANCO BRILHANTE" },
+      { k: "onCard", label: "Mostrar no cartão do quadro", t: "check", def: true }, { k: "required", label: "Preenchimento obrigatório", t: "check", def: false }, { k: "active", label: "Campo ativo", t: "check", def: true }],
+    cols: [{ k: "position", label: "Ordem", f: "num" }, { k: "label", label: "Campo", f: "desc" }, { k: "type", label: "Tipo", f: "opt" }, { k: "options", label: "Opções", f: "list" }, { k: "onCard", label: "No cartão", f: "active" }, { k: "required", label: "Obrigatório", f: "active" }, { k: "active", label: "Situação", f: "active" }],
+    order: () => asc(E.customFields.position),
+    where: sql`entity = 'purchase_order'`,
   },
   "locais-entrega": {
     mod: "comercial", table: t(E.deliveryPlaces), title: "Locais de entrega e montagem", sub: "Endereços usados com frequência (obras, filiais do cliente, transportadoras). Aparecem na pesquisa do local de entrega do pedido e do local da montagem.", one: "local",

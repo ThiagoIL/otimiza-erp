@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
-import { Sel } from "./SearchPicker";
+import { PickField, PlaceField, Sel } from "./SearchPicker";
+import { searchPartnersAction } from "@/server/search-actions";
 import { useMemo, useState } from "react";
 import { Icon } from "./Icon";
 import { Modal, useRun } from "./client";
 import { ItemPicker } from "./ItemPicker";
 import { toast } from "./Toast";
-import { concludeQuotationAction, createQuotationAction, receivePurchaseAction, savePurchaseOrderAction, saveQuotationAction, saveRequestAction } from "@/server/purchase-actions";
+import { concludeQuotationAction, createQuotationAction, receivePurchaseAction, savePurchaseOrderAction, saveQuotationAction, saveRequestAction, setPurchaseStageAction } from "@/server/purchase-actions";
 import { docTotals, installments, r2, today, type Inst } from "@/lib/dates";
 
 type Opt = [string, string];
@@ -167,8 +168,11 @@ export function QuotationEditor({ id, open, dueDate, notes, items: i0, suppliers
 
 // ------------------------------------------------------------------ Pedido de compra
 export type POLine = { key: string; itemId: string; code: string; name: string; unit: string; qty: number; price: number; discountPct: number; received: number };
-export type POData = { id?: string; status: string; partnerId: string; issueDate: string; deliveryDate: string; buyer: string; paymentMethodId: string; paymentTermId: string; installments: Inst[]; discount: number; freight: number; notes: string; lines: POLine[] };
-export function PurchaseOrderEditor({ data, suppliers, methods, terms, canEdit }: { data: POData; suppliers: Opt[]; methods: Opt[]; terms: { id: string; name: string; days: number[] }[]; canEdit: boolean }) {
+export type POData = { id?: string; status: string; stageId: string; clientId: string; clientLabel: string; work: string; custom: Record<string, string>; partnerId: string; issueDate: string; deliveryDate: string; buyer: string; paymentMethodId: string; paymentTermId: string; installments: Inst[]; discount: number; freight: number; notes: string; lines: POLine[] };
+export type POStage = { id: string; name: string; color: string; kind: string };
+export type POField = { id: string; label: string; type: string; options: string[]; required: boolean };
+const poKind = (st: string) => (st === "RECEBIDO_PARCIAL" ? "ENVIADO" : st);
+export function PurchaseOrderEditor({ data, suppliers, methods, terms, stages, fields, canEdit }: { data: POData; suppliers: Opt[]; methods: Opt[]; terms: { id: string; name: string; days: number[] }[]; stages: POStage[]; fields: POField[]; canEdit: boolean }) {
   const [d, setD] = useState(data);
   const [manual, setManual] = useState(!!data.id && data.installments.length > 0);
   const [pick, setPick] = useState(false);
@@ -181,6 +185,7 @@ export function PurchaseOrderEditor({ data, suppliers, methods, terms, canEdit }
   const auto = installments(t.total, term?.days ?? [28], d.deliveryDate || d.issueDate);
   const inst = manual ? d.installments : auto;
   const save = (status?: string) => run(() => savePurchaseOrderAction({ id: d.id, partnerId: d.partnerId, status: (status ?? (received ? "ENVIADO" : d.status)) as "ENVIADO", issueDate: d.issueDate, deliveryDate: d.deliveryDate || null, buyer: d.buyer,
+    stageId: status && status !== d.status ? null : d.stageId || null, clientId: d.clientId || null, work: d.work, custom: d.custom,
     paymentMethodId: d.paymentMethodId || null, paymentTermId: d.paymentTermId || null, installments: inst, discount: d.discount, freight: d.freight, notes: d.notes,
     items: d.lines.map((l) => ({ itemId: l.itemId, qty: l.qty, price: l.price, discountPct: l.discountPct })) }), () => { if (status) set({ status }); });
   return (
@@ -188,13 +193,37 @@ export function PurchaseOrderEditor({ data, suppliers, methods, terms, canEdit }
       {received && <div className="infoline" style={{ margin: 0 }}>Pedido com recebimento registrado: itens e valores ficam travados. Você ainda pode receber o saldo.</div>}
       <div className="sheet-top"><div className="form f4">
         <div className="fld span2"><label htmlFor="po_p">Fornecedor <span className="req">*</span></label><Sel id="po_p" value={d.partnerId} disabled={ro} onChange={(e) => set({ partnerId: e.target.value })}><option value="">Selecione…</option>{suppliers.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
-        <div className="fld span2"><span className="flabel">Situação</span>
-          <div className="seg" role="group">{[["RASCUNHO", "Rascunho"], ["ENVIADO", "Enviado"], ["CANCELADO", "Cancelado"]].map(([v, l]) => <button key={v} type="button" aria-pressed={d.status === v} disabled={!canEdit || received} onClick={() => set({ status: v })}>{l}</button>)}
-            {received && <button type="button" aria-pressed>{d.status === "RECEBIDO" ? "Recebido" : "Recebido parcial"}</button>}</div></div>
+        <div className="fld span2"><span className="flabel">Etapa</span>
+          <div className="seg seg-wrap" role="group" aria-label="Etapa do pedido de compra">{stages.map((st) => {
+            // com recebimento: só entre as etapas do mesmo comportamento; Recebido só chega pelo botão Receber
+            const kind = poKind(d.status);
+            const can = canEdit && (received ? st.kind === kind : st.kind !== "RECEBIDO");
+            const on = d.stageId ? d.stageId === st.id : st.kind === kind;
+            return <button key={st.id} type="button" aria-pressed={on} disabled={!can || pending} style={{ ["--c" as string]: st.color }}
+              title={st.kind === "RECEBIDO" && !received ? "O pedido chega aqui ao registrar o recebimento" : undefined}
+              onClick={() => { if (on) return; if ((received || d.status === "CANCELADO") && d.id) { run(() => setPurchaseStageAction(d.id!, st.id), () => set({ stageId: st.id, status: received ? d.status : st.kind })); return; }
+                set({ stageId: st.id, status: st.kind }); }}>{st.name}</button>;
+          })}</div></div>
         <div className="fld"><label htmlFor="po_b">Comprador</label><input id="po_b" value={d.buyer} disabled={ro} onChange={(e) => set({ buyer: e.target.value })} /></div>
         <div className="fld"><label htmlFor="po_e">Emissão</label><input id="po_e" type="date" value={d.issueDate} disabled={ro} onChange={(e) => set({ issueDate: e.target.value })} /></div>
         <div className="fld"><label htmlFor="po_c">Previsão de chegada</label><input id="po_c" type="date" value={d.deliveryDate} disabled={!canEdit} onChange={(e) => set({ deliveryDate: e.target.value })} /></div>
+        <PickField id="po_cli" className="fld" label="Cliente (para quem é a compra)" disabled={!canEdit} emptyText="Nenhum (estoque)"
+          value={d.clientId ? { id: d.clientId, label: d.clientLabel } : null} onChange={(r) => set({ clientId: r?.id ?? "", clientLabel: r?.label ?? "" })}
+          picker={{ title: "Pesquisar cliente", fetcher: searchPartnersAction, filter: "Cliente", lockFilter: true, placeholder: "Nome, fantasia, CNPJ/CPF ou cidade", columns: ["Nome", "Razão social", "CNPJ/CPF", "Cidade", "Telefone"] }} />
+        <PlaceField id="po_obra" className="fld span3" label="Obra / local de entrega" value={d.work} disabled={!canEdit} partnerId={d.clientId} onChange={(v) => set({ work: v })} placeholder="Digite ou pesquise a obra" />
       </div></div>
+      {fields.length > 0 && (
+        <section className="panel sec-panel"><h2>Informações do pedido</h2><div className="pb"><div className="form f4">
+          {fields.map((f) => {
+            const v = d.custom[f.id] ?? "";
+            const on = (x: string) => set({ custom: { ...d.custom, [f.id]: x } });
+            const lab = <label htmlFor={`pcf_${f.id}`}>{f.label}{f.required && <span className="req"> *</span>}</label>;
+            if (f.type === "lista") return <div key={f.id} className="fld">{lab}<Sel id={`pcf_${f.id}`} value={v} disabled={!canEdit} onChange={(e) => on(e.target.value)}><option value="">—</option>{f.options.map((o) => <option key={o}>{o}</option>)}</Sel></div>;
+            if (f.type === "sim_nao") return <div key={f.id} className="fld">{lab}<select id={`pcf_${f.id}`} value={v} disabled={!canEdit} onChange={(e) => on(e.target.value)}><option value="">—</option><option>Sim</option><option>Não</option></select></div>;
+            return <div key={f.id} className="fld">{lab}<input id={`pcf_${f.id}`} type={f.type === "data" ? "date" : "text"} inputMode={f.type === "numero" ? "decimal" : undefined} value={v} disabled={!canEdit} onChange={(e) => on(e.target.value)} /></div>;
+          })}
+        </div></div></section>
+      )}
       <section className="panel sec-panel">
         <h2>Itens <span className="n">{d.lines.length}</span>{!ro && <span style={{ marginLeft: "auto" }}><button type="button" className="btn btn-sm btn-primary" onClick={() => setPick(true)}><Icon name="search" size={14} /> Pesquisar itens</button></span>}</h2>
         <div className="tbl solo items-t" style={{ border: 0, borderRadius: 0 }}><table>
@@ -248,7 +277,8 @@ export function ReceiveButton({ poId, lines, locations, defaultLocation }: { poI
   const { run, pending } = useRun();
   return (
     <>
-      <button type="button" className="btn btn-primary" onClick={() => setOpen(true)}><Icon name="in" size={16} /> Receber</button>
+      {/* as linhas do pedido mudam de id ao salvar: as quantidades sugeridas são montadas ao abrir */}
+      <button type="button" className="btn btn-primary" onClick={() => { setQ(Object.fromEntries(lines.map((l) => [l.id, String(Math.max(0, l.qty - l.received))]))); setOpen(true); }}><Icon name="in" size={16} /> Receber</button>
       {open && <Modal title="Registrar recebimento" size="wide" onClose={() => setOpen(false)}
         foot={<><button type="button" className="btn" onClick={() => setOpen(false)}>Cancelar</button><button type="button" className="btn btn-primary" disabled={pending}
           onClick={() => run(() => receivePurchaseAction({ id: poId, invoice: f.invoice, date: f.date, locationId: f.loc, lines: lines.map((l) => ({ lineId: l.id, qty: Number((q[l.id] ?? "0").replace(",", ".")) || 0 })) }), () => setOpen(false))}>Registrar recebimento</button></>}>

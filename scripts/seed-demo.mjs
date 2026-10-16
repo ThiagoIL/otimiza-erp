@@ -56,7 +56,7 @@ try {
 
   // ---------- empresa e cadastros básicos ----------
   await ins("company_settings", { legalName: "Carrocerias Modelo Ltda", tradeName: "Carrocerias Modelo", document: "12.345.678/0001-95", stateReg: "061234567", taxRegime: "Simples Nacional",
-    phone: "(85) 3371-0000", email: "contato@carroceriasmodelo.com.br", zip: "61939-160", street: "Av. Industrial", number: "1500", district: "Distrito Industrial", city: "Maracanaú", cityCode: "2307650", uf: "CE", defaultsVersion: 2 });
+    phone: "(85) 3371-0000", email: "contato@carroceriasmodelo.com.br", zip: "61939-160", street: "Av. Industrial", number: "1500", district: "Distrito Industrial", city: "Maracanaú", cityCode: "2307650", uf: "CE", defaultsVersion: 3 });
   for (const [code, name, decimals] of [["UN", "Unidade", 0], ["PC", "Peça", 0], ["KG", "Quilograma", 3], ["M", "Metro", 2], ["M2", "Metro quadrado", 2], ["L", "Litro", 2], ["GL", "Galão", 0], ["CX", "Caixa", 0], ["PR", "Par", 0], ["KIT", "Kit", 0], ["H", "Hora", 2]])
     await ins("units", { code, name, decimals });
   const T = {};
@@ -242,13 +242,25 @@ try {
   await mv({ date: D(-4), type: "TRANSFERENCIA", itemId: IT.it13, locationId: L.e04, destLocationId: L.e02, qty: 6, unitCost: COST.it13, document: "Transf. 22", notes: "Chapas para a linha", userName: "Almoxarifado" });
   await mv({ date: D(-1), type: "AJUSTE", itemId: IT.it08, locationId: L.e01, qty: -4, unitCost: COST.it08, document: "Inventário", notes: "Contagem cíclica", userName: "Almoxarifado" });
 
+  // ---------- compras: etapas do quadro (como no ClickUp) e campos personalizados ----------
+  const PS = {};
+  for (const [k, name, color, kind, system] of [["RASCUNHO", "Levantamento de material", "#6B7785", "RASCUNHO", true], ["COT", "Em cotação", "#5B4BC4", "RASCUNHO", false],
+    ["APR", "Em aprovação / pagamento", "#2F6E9A", "RASCUNHO", false], ["ENVIADO", "Em produção no fornecedor", "#8A5A44", "ENVIADO", true], ["BEN", "Beneficiamento", "#C77700", "ENVIADO", false],
+    ["TRA", "Transportadora", "#7A4FA0", "ENVIADO", false], ["RECEBIDO", "Entregue", "#2E7D4F", "RECEBIDO", true], ["CANCELADO", "Cancelado", "#B3261E", "CANCELADO", true]])
+    PS[k] = await ins("purchase_stages", { name, color, kind, system, position: Object.keys(PS).length + 1 });
+  const CFP = {
+    trat: await ins("custom_fields", { entity: "purchase_order", label: "Tratamento", type: "lista", options: ["ANOD PRETO (A13)", "NATURAL", "PINTURA BRANCO BRILHANTE", "PINTURA CINZA 7043F"], position: 1, onCard: true }),
+    cc: await ins("custom_fields", { entity: "purchase_order", label: "Centro de custo", type: "lista", options: ["Produção", "Manutenção", "Obra"], position: 2, onCard: true }),
+    ben: await ins("custom_fields", { entity: "purchase_order", label: "Beneficiadora", type: "texto", position: 3, onCard: false }),
+  };
+
   // ---------- compras: pedidos recebidos com contas a pagar ----------
   let pcn = 300;
   async function purchase(fk, lines, dRec, status, extraO = {}) {
     const number = ++pcn;
     const total = r2(lines.reduce((a, [, q, pr]) => a + q * pr, 0));
     const inst = parc(total, [28], dRec);
-    const id = await ins("purchase_orders", { number, status, partnerId: P[fk], issueDate: addD(dRec, -7), deliveryDate: dRec, buyer: "Almoxarifado", paymentMethodId: PM.Boleto, paymentTermId: PT["28 dias"].id, installments: inst, total, ...extraO });
+    const id = await ins("purchase_orders", { number, status, stageId: PS[status], partnerId: P[fk], issueDate: addD(dRec, -7), deliveryDate: dRec, buyer: "Almoxarifado", paymentMethodId: PM.Boleto, paymentTermId: PT["28 dias"].id, installments: inst, total, ...extraO });
     let pos = 0;
     for (const [k, q, pr] of lines) {
       const rec = status === "RECEBIDO" ? q : 0;
@@ -276,8 +288,13 @@ try {
   await purchase("f03", [["it07", 60, 9.9]], D(-60), "RECEBIDO");
   await purchase("f02", [["it18", 800, 0.6], ["it19", 800, 0.27], ["it20", 6, 58.9]], D(-45), "RECEBIDO");
   await purchase("f04", [["it21", 10, 189.9], ["it22", 6, 164.5], ["it23", 8, 72]], D(-20), "RECEBIDO");
-  await purchase("f01", [["it14", 12, 612], ["it17", 10, 540]], D(-2), "ENVIADO", { issueDate: D(-12) });
-  await purchase("f02", [["it24", 20, 46.8], ["it25", 10, 132]], D(10), "RASCUNHO", { issueDate: TODAY });
+  await purchase("f01", [["it14", 12, 612], ["it17", 10, 540]], D(-2), "ENVIADO", { issueDate: D(-12), stageId: PS.TRA, clientId: P.cl03, work: "Galpão Via Diesel · Mossoró/RN", custom: { [CFP.trat]: "NATURAL", [CFP.cc]: "Produção" } });
+  await purchase("f02", [["it24", 20, 46.8], ["it25", 10, 132]], D(10), "RASCUNHO", { issueDate: TODAY, stageId: PS.APR, clientId: P.cl06, work: "CD Supermercado Potiguar · Natal/RN", custom: { [CFP.cc]: "Obra" } });
+  // em andamento no fornecedor, como o quadro do ClickUp
+  await purchase("f01", [["it17", 8, 545]], D(3), "ENVIADO", { issueDate: D(-6), stageId: PS.ENVIADO, clientId: P.cl06, work: "Obra Residencial Atlântico · Fortaleza/CE", custom: { [CFP.trat]: "ANOD PRETO (A13)", [CFP.cc]: "Obra", [CFP.ben]: "Anodiza Nordeste" } });
+  await purchase("f01", [["it15", 10, 146]], D(5), "ENVIADO", { issueDate: D(-5), stageId: PS.BEN, clientId: P.cl01, custom: { [CFP.trat]: "PINTURA CINZA 7043F", [CFP.cc]: "Produção", [CFP.ben]: "Pintura Forte" } });
+  await purchase("f03", [["it07", 50, 9.9]], D(1), "RASCUNHO", { issueDate: D(-1), stageId: PS.COT, custom: { [CFP.cc]: "Produção" } });
+  await purchase("f04", [["it21", 4, 189.9]], D(-1), "ENVIADO", { issueDate: D(-9), stageId: PS.ENVIADO, clientId: P.cl04, custom: { [CFP.trat]: "PINTURA BRANCO BRILHANTE", [CFP.cc]: "Manutenção" } });
 
   // ---------- etapas do pedido de venda ----------
   const SS = {};

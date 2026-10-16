@@ -121,6 +121,14 @@ abrir `http://demo.localhost:3000`.
   conectado, POST/DELETE só administrador). Aparece no menu lateral (`Shell` prop `logo`) e no topo dos impressos
   (`companyHeader().logo` em data URI, usado pelo `DocReport`).
 
+- **Quadro de compras** (out/2026, igual ao ClickUp do cliente): Compras › Pedidos de compra abre em **quadro** (kanban,
+  `PurchaseBoard`) ou lista. Etapas configuráveis em Compras › Configurações (`purchase_stages`; as 4 do sistema Rascunho,
+  Enviado, Recebido, Cancelado não se excluem; etapas novas têm o comportamento de uma delas, ex.: Em cotação = Rascunho,
+  Beneficiamento/Transportadora = Enviado, Entregue = Recebido). Arrastar chama `setPurchaseStageAction`; a etapa de
+  comportamento Recebido só chega pelo recebimento (`poStageIdFor` em common.ts; `PO_STAGE` em queries.ts). Pedido tem
+  **cliente** (`client_id`) e **obra** (`work`, com `PlaceField`) para filtrar, e **campos personalizados**
+  (`custom_fields.entity = 'purchase_order'`, `on_card` = aparece como etiqueta no cartão).
+
 ## Próximos passos sugeridos
 - Emissão real de NF-e (provedor) quando for necessário.
 - Importação de cadastros por planilha.

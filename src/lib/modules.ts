@@ -90,6 +90,10 @@ export const TENANT_NAV: NavModule[] = [
       { href: "/compras/cotacoes", label: "Cotações" },
       { href: "/compras/pedidos", label: "Pedidos de compra" },
       { href: "/compras/fornecedores", label: "Fornecedores" },
+      { href: "/compras/configuracoes", label: "Configurações", tabs: [
+        { href: "/compras/configuracoes", label: "Etapas do pedido de compra" },
+        { href: "/compras/configuracoes/campos", label: "Campos personalizados" },
+      ] },
     ],
   },
   {

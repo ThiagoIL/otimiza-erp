@@ -9,6 +9,9 @@ type SP = Record<string, string | undefined>;
 /** Etapa do pedido (a da situação, para pedidos antigos sem etapa gravada). */
 export const SO_STAGE = sql`coalesce("sales_orders"."stage_id", (select ss.id from sales_stages ss where ss.system and ss.kind = "sales_orders"."status" limit 1))`;
 
+/** Etapa do pedido de compra (a da situação, para pedidos sem etapa gravada). */
+export const PO_STAGE = sql`coalesce("purchase_orders"."stage_id", (select ps.id from purchase_stages ps where ps.system and ps.kind = (case "purchase_orders"."status" when 'RECEBIDO_PARCIAL' then 'ENVIADO' else "purchase_orders"."status" end) limit 1))`;
+
 export async function salesWhere(tenantId: string, sp: SP, withStatus = true): Promise<SQL> {
   const c: SQL[] = [eq(E.salesOrders.tenantId, tenantId)];
   // sem situação escolhida: só os em aberto (proposta e aprovado). "todos" mostra também faturados e cancelados.

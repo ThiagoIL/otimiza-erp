@@ -71,6 +71,20 @@
       "when": 1792077386867,
       "tag": "0009_logo_da_empresa",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792158860556,
+      "tag": "0010_etapas_de_compra",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792158863802,
+      "tag": "0011_etapas_de_compra_dados",
+      "breakpoints": true
     }
   ]
 }

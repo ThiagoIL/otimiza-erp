@@ -361,6 +361,8 @@ export const customFields = pgTable("custom_fields", {
   type: text("type").notNull().default("texto"), // texto | numero | data | lista | sim_nao
   options: text("options").array().notNull().default([]),
   required: boolean("required").notNull().default(false),
+  /** aparece no cartão do quadro (pedidos de compra) */
+  onCard: boolean("on_card").notNull().default(false),
   position: integer("position").notNull().default(1),
   active: boolean("active").notNull().default(true),
 }, (t) => [tid("custom_fields_tid_uq", t)]);
@@ -863,6 +865,22 @@ export const quotationPrices = pgTable("quotation_prices", {
   fk("quotation_prices_sup_fk", t.tenantId, t.quotationSupplierId, () => quotationSuppliers, true),
 ]);
 
+/**
+ * Etapas do pedido de compra (quadro de Compras), configuráveis em Compras › Configurações.
+ * As quatro do sistema (Rascunho, Enviado, Recebido, Cancelado) não podem ser excluídas; as criadas pelo usuário
+ * (ex.: Em cotação, Em produção, Beneficiamento, Transportadora) têm o comportamento de uma delas.
+ */
+export const purchaseStages = pgTable("purchase_stages", {
+  ...base(),
+  name: text("name").notNull(),
+  color: text("color").notNull().default("#6B7785"),
+  position: integer("position").notNull().default(1),
+  /** RASCUNHO | ENVIADO | RECEBIDO | CANCELADO */
+  kind: text("kind").notNull(),
+  system: boolean("system").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+}, (t) => [tid("purchase_stages_tid_uq", t), uniqueIndex("purchase_stages_system_uq").on(t.tenantId, t.kind).where(sql`${t.system}`)]);
+
 export const purchaseOrders = pgTable("purchase_orders", {
   ...base(),
   number: integer("number").notNull(),
@@ -880,8 +898,16 @@ export const purchaseOrders = pgTable("purchase_orders", {
   total: money("total").notNull().default("0"),
   notes: text("notes"),
   quotationId: text("quotation_id"),
+  /** etapa mostrada no quadro (purchase_stages); o kind dela acompanha o status */
+  stageId: text("stage_id"),
+  /** para quem é a compra (cliente) e a obra / local de entrega, para acompanhar por cliente e obra */
+  clientId: text("client_id"),
+  work: text("work"),
+  custom: jsonb("custom").$type<Record<string, string>>().notNull().default({}),
 }, (t) => [
   tid("purchase_orders_tid_uq", t),
+  fk("purchase_orders_stage_fk", t.tenantId, t.stageId, () => purchaseStages),
+  fk("purchase_orders_client_fk", t.tenantId, t.clientId, () => partners),
   uniqueIndex("purchase_orders_number_uq").on(t.tenantId, t.number),
   fk("purchase_orders_partner_fk", t.tenantId, t.partnerId, () => partners),
 ]);
@@ -1002,7 +1028,7 @@ export const TENANT_TABLES = [
   "team_members", "production_orders", "production_order_components", "production_outputs", "time_entries", "assemblies",
   "assembly_locations", "assembly_parts", "purchase_requests", "purchase_request_items", "quotations", "quotation_items",
   "quotation_suppliers", "quotation_prices", "purchase_orders", "purchase_order_items", "fin_titles", "bank_entries", "sequences",
-  "sales_stages", "delivery_places", "production_reports", "messages", "chat_reads", "tasks", "notifications",
+  "sales_stages", "purchase_stages", "delivery_places", "production_reports", "messages", "chat_reads", "tasks", "notifications",
 ] as const;
 
 export type Item = typeof items.$inferSelect;

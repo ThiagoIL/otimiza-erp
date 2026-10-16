@@ -98,7 +98,7 @@ export function ruleMsg(err: unknown, fallback = "Não foi possível salvar. Ten
 // ------------------------------------------------------------------------------------
 // Cadastros padrão de cada empresa
 // ------------------------------------------------------------------------------------
-const DEFAULTS_VERSION = 2;
+const DEFAULTS_VERSION = 3;
 const done = new Set<string>();
 
 /** Cria (uma vez por empresa) os cadastros básicos para o sistema já sair usável. */
@@ -135,6 +135,10 @@ export async function ensureDefaults(tenantId: string): Promise<void> {
     await ins(E.salesStages, [["Proposta", "#6B7785", "PROPOSTA"], ["Aprovado", "#E0601A", "APROVADO"], ["Faturado", "#2E7D4F", "FATURADO"], ["Cancelado", "#B3261E", "CANCELADO"]]
       .map(([name, color, kind], i) => ({ name, color, kind, position: i + 1, system: true })));
     await tx.execute(sql`update sales_orders o set stage_id = s.id from sales_stages s where s.system and s.kind = o.status and o.stage_id is null`);
+    await ins(E.purchaseStages, [["Rascunho", "#6B7785", "RASCUNHO"], ["Enviado ao fornecedor", "#E0601A", "ENVIADO"], ["Recebido", "#2E7D4F", "RECEBIDO"], ["Cancelado", "#B3261E", "CANCELADO"]]
+      .map(([name, color, kind], i) => ({ name, color, kind, position: i + 1, system: true })));
+    await tx.execute(sql`update purchase_orders o set stage_id = s.id from purchase_stages s where s.system and o.stage_id is null
+      and s.kind = case o.status when 'RECEBIDO_PARCIAL' then 'ENVIADO' else o.status end`);
     if (cs) await tx.update(E.companySettings).set({ defaultsVersion: DEFAULTS_VERSION }).where(eq(E.companySettings.id, cs.id));
     else await tx.insert(E.companySettings).values({ tenantId, defaultsVersion: DEFAULTS_VERSION });
   });
@@ -190,4 +194,21 @@ export async function stageIdFor(tx: Tx, status: string, current?: string | null
 export async function logoUrl(tenantId: string): Promise<string | null> {
   const [c] = await withTenant(tenantId, (tx) => tx.select({ at: E.companySettings.logoAt }).from(E.companySettings).limit(1));
   return c?.at ? `/api/logo?v=${c.at.getTime()}` : null;
+}
+
+// ------------------------------------------------------------------------------------
+// Etapas do pedido de compra
+// ------------------------------------------------------------------------------------
+/** Comportamento (kind) da etapa para a situação do pedido de compra: recebido parcial continua "enviado". */
+export const poKind = (status: string) => (status === "RECEBIDO_PARCIAL" ? "ENVIADO" : status);
+
+/** Etapa que o pedido de compra deve ter para a situação: mantém a atual se ela já tem esse comportamento. */
+export async function poStageIdFor(tx: Tx, status: string, current?: string | null): Promise<string | null> {
+  const kind = poKind(status);
+  if (current) {
+    const [cur] = await tx.select({ kind: E.purchaseStages.kind }).from(E.purchaseStages).where(eq(E.purchaseStages.id, current)).limit(1);
+    if (cur?.kind === kind) return current;
+  }
+  const [st] = await tx.select({ id: E.purchaseStages.id }).from(E.purchaseStages).where(and(eq(E.purchaseStages.kind, kind), eq(E.purchaseStages.system, true))).limit(1);
+  return st?.id ?? null;
 }

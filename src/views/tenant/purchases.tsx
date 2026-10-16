@@ -9,6 +9,9 @@ import { ActionButton, ClickRow, FilterBar, FilterTabs } from "@/components/clie
 import { Icon } from "@/components/Icon";
 import { PurchaseOrderEditor, QuotationEditor, QuoteFromRequests, ReceiveButton, RequestEditor } from "@/components/PurchaseUI";
 import { Attachments } from "@/components/Attachments";
+import { PurchaseBoard, type POCard } from "@/components/PurchaseBoard";
+import { NotifyButton } from "@/components/Comm";
+import { PO_STAGE } from "@/server/queries";
 import { DocReport } from "@/components/DocReport";
 import { cancelQuotationAction, deletePurchaseOrderAction, deleteRequestAction, setRequestStatusAction, suggestRequestAction } from "@/server/purchase-actions";
 import { balances, balanceOf, companyHeader, loadAttachments, partnerAddress } from "@/server/common";
@@ -166,53 +169,92 @@ export async function QuotationPage({ params }: { params: Promise<{ id: string }
 export async function POList({ searchParams }: { searchParams: Promise<SP> }) {
   const s = await page("compras");
   const sp = await searchParams;
+  const mode = sp.modo === "lista" ? "lista" : "quadro";
   const c: SQL[] = [eq(E.purchaseOrders.tenantId, s.tenant.id)];
-  if (sp.st) c.push(eq(E.purchaseOrders.status, sp.st));
-  if (sp.num && /^\d+$/.test(sp.num)) c.push(eq(E.purchaseOrders.number, Number(sp.num)));
+  if (sp.etapa) c.push(sql`${PO_STAGE} = ${sp.etapa}`);
+  if (sp.q?.trim()) {
+    const q = `%${sp.q.trim()}%`, n = Number(sp.q.replace(/\D/g, ""));
+    c.push(sql`(${E.partners.name} ilike ${q} or ${E.partners.tradeName} ilike ${q} or ${E.purchaseOrders.work} ilike ${q} or ${E.purchaseOrders.notes} ilike ${q}
+      or exists (select 1 from purchase_order_items x join items i on i.id = x.item_id where x.order_id = "purchase_orders"."id" and (i.name ilike ${q} or i.code ilike ${q}))
+      ${n ? sql`or ${E.purchaseOrders.number} = ${n}` : sql``})`);
+  }
   if (sp.forn) c.push(eq(E.purchaseOrders.partnerId, sp.forn));
+  if (sp.cli) c.push(eq(E.purchaseOrders.clientId, sp.cli));
+  if (sp.obra?.trim()) c.push(sql`${E.purchaseOrders.work} ilike ${"%" + sp.obra.trim() + "%"}`);
   if (sp.de && isDate(sp.de)) c.push(gte(E.purchaseOrders.issueDate, sp.de));
   if (sp.ate && isDate(sp.ate)) c.push(lte(E.purchaseOrders.issueDate, sp.ate));
-  if (sp.item) c.push(sql`exists (select 1 from purchase_order_items x join items i on i.id = x.item_id where x.order_id = "purchase_orders"."id" and (i.name ilike ${"%" + sp.item + "%"} or i.code ilike ${"%" + sp.item + "%"}))`);
-  const base = and(eq(E.purchaseOrders.tenantId, s.tenant.id));
+  // por padrão, recebidos e cancelados só dos últimos 60 dias (o quadro não fica entupido)
+  if (!sp.antigos) c.push(sql`(${E.purchaseOrders.status} not in ('RECEBIDO', 'CANCELADO') or ${E.purchaseOrders.updatedAt} > now() - interval '60 days')`);
   const d = await s.tx(async (tx) => ({
-    rows: await tx.select({ o: E.purchaseOrders, f: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})`,
+    rows: await tx.select({ o: E.purchaseOrders, f: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})`, stage: sql<string>`${PO_STAGE}`,
+      cli: sql<string | null>`(select coalesce(p.trade_name, p.name) from partners p where p.id = "purchase_orders"."client_id")`,
       q: sql<string>`(select coalesce(sum(qty),0)::text from purchase_order_items x where x.order_id = "purchase_orders"."id")`, r: sql<string>`(select coalesce(sum(least(received_qty, qty)),0)::text from purchase_order_items x where x.order_id = "purchase_orders"."id")`,
-      first: sql<string | null>`(select i.name from purchase_order_items x join items i on i.id = x.item_id where x.order_id = "purchase_orders"."id" order by x.position limit 1)`, n: sql<number>`(select count(*)::int from purchase_order_items x where x.order_id = "purchase_orders"."id")` })
-      .from(E.purchaseOrders).innerJoin(E.partners, eq(E.partners.id, E.purchaseOrders.partnerId)).where(and(...c)).orderBy(desc(E.purchaseOrders.number)),
-    counts: await tx.select({ st: E.purchaseOrders.status, n: sql<number>`count(*)::int` }).from(E.purchaseOrders).where(base).groupBy(E.purchaseOrders.status),
+      first: sql<string | null>`(select i.name from purchase_order_items x join items i on i.id = x.item_id where x.order_id = "purchase_orders"."id" order by x.position limit 1)`, n: sql<number>`(select count(*)::int from purchase_order_items x where x.order_id = "purchase_orders"."id")`,
+      files: sql<number>`(select count(*)::int from attachments a where a.entity = 'purchase_order' and a.entity_id = "purchase_orders"."id")` })
+      .from(E.purchaseOrders).innerJoin(E.partners, eq(E.partners.id, E.purchaseOrders.partnerId)).where(and(...c)).orderBy(asc(sql`coalesce(${E.purchaseOrders.deliveryDate}, '9999-12-31')`), desc(E.purchaseOrders.number)),
+    stages: await tx.select().from(E.purchaseStages).orderBy(asc(E.purchaseStages.position)),
+    fields: await tx.select().from(E.customFields).where(and(eq(E.customFields.entity, "purchase_order"), eq(E.customFields.active, true))).orderBy(asc(E.customFields.position)),
+    clients: await tx.select({ id: E.partners.id, n: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})` }).from(E.partners)
+      .where(sql`exists (select 1 from purchase_orders o where o.client_id = ${E.partners.id})`).orderBy(sql`2`),
   }));
   const sups = await suppliersOf(s);
-  const cnt = (k: string) => (k ? d.counts.find((x) => x.st === k)?.n ?? 0 : d.counts.reduce((a, x) => a + x.n, 0));
   const tot = d.rows.reduce((a, r) => a + Number(r.o.total), 0);
   const hoje = today();
+  const onCard = d.fields.filter((f) => f.onCard);
+  const stageOf = (id: string) => d.stages.find((x) => x.id === id);
+  // etapas ativas e as inativas que ainda têm pedidos
+  const cols = d.stages.filter((x) => x.active || d.rows.some((r) => r.stage === x.id));
+  const cards: POCard[] = d.rows.map(({ o, f, stage, cli, q, r, first, n, files }) => ({
+    id: o.id, number: o.number, supplier: f, client: cli, work: o.work, stageId: stage, delivery: o.deliveryDate, total: Number(o.total), first, nItems: n, files,
+    received: Number(q) ? (Number(r) / Number(q)) * 100 : 0, status: o.status, tags: onCard.filter((x) => o.custom[x.id]).map((x) => ({ label: x.label, value: o.custom[x.id] })),
+  }));
+  const qs = (m: string) => `/compras/pedidos?${new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter(([k, v]) => v && k !== "modo") as [string, string][]), ...(m === "lista" ? { modo: "lista" } : {}) })}`;
+  const moreActive = ["de", "ate", "antigos"].filter((k) => sp[k]).length;
   return (
     <>
-      <PageHead title="Pedidos de compra" sub="Compras de materiais. O recebimento dá entrada no estoque e gera as contas a pagar."
-        actions={s.edit && <BtnLink href="/compras/pedidos/novo" primary icon="plus">Novo pedido</BtnLink>} />
-      <FilterBar right={<span className="count">{d.rows.length} pedidos · {fmtMoney(tot)}</span>} moreActive={sp.item ? 1 : 0}
-        tabs={<FilterTabs name="st" value={sp.st ?? ""} options={[{ v: "", label: "Todos", n: cnt("") }, ...Object.entries(PO_STATUS).map(([v, x]) => ({ v, label: x.label, n: cnt(v) }))]} />}
-        more={<label className="fl">Item <input type="text" name="item" defaultValue={sp.item ?? ""} placeholder="código ou descrição" /></label>}>
-        <input type="text" name="num" defaultValue={sp.num ?? ""} placeholder="Nº do pedido" aria-label="Número" style={{ width: 120 }} />
-        <Sel name="forn" defaultValue={sp.forn ?? ""} aria-label="Fornecedor" style={{ maxWidth: 230 }}><option value="">Todos os fornecedores</option>{sups.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
-        <label className="fl">Emissão de <input type="date" name="de" defaultValue={sp.de ?? ""} /></label>
-        <label className="fl">até <input type="date" name="ate" defaultValue={sp.ate ?? ""} /></label>
+      <PageHead title="Pedidos de compra" sub={`Acompanhe cada compra pelas etapas, por cliente e por obra. ${mode === "quadro" ? "Arraste um cartão para mudar a etapa." : "Clique numa linha para abrir o pedido."} O recebimento dá entrada no estoque e gera as contas a pagar.`}
+        actions={<>
+          <div className="tabs" role="group" aria-label="Modo de visualização">
+            <Link className="btn btn-ghost btn-sm" href={qs("quadro")} style={mode === "quadro" ? { background: "var(--surface)", fontWeight: 700 } : undefined}><Icon name="board" size={15} /> Quadro</Link>
+            <Link className="btn btn-ghost btn-sm" href={qs("lista")} style={mode === "lista" ? { background: "var(--surface)", fontWeight: 700 } : undefined}><Icon name="list" size={15} /> Lista</Link>
+          </div>
+          {s.edit && <BtnLink href="/compras/pedidos/novo" primary icon="plus">Novo pedido</BtnLink>}
+        </>} />
+      <FilterBar solo={mode === "quadro"} right={<span className="count">{d.rows.length} pedidos · {fmtMoney(tot)}</span>} moreActive={moreActive}
+        more={<>
+          <label className="fl">Emissão de <input type="date" name="de" defaultValue={sp.de ?? ""} /></label>
+          <label className="fl">até <input type="date" name="ate" defaultValue={sp.ate ?? ""} /></label>
+          <label className="chk"><input type="checkbox" name="antigos" value="1" defaultChecked={!!sp.antigos} /> Mostrar recebidos e cancelados antigos</label>
+        </>}>
+        {mode === "lista" && <input type="hidden" name="modo" value="lista" />}
+        <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Nº, fornecedor, item ou obra" aria-label="Buscar pedido de compra" /></div>
+        <Sel name="forn" defaultValue={sp.forn ?? ""} aria-label="Fornecedor" style={{ maxWidth: 220 }}><option value="">Todos os fornecedores</option>{sups.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
+        <Sel name="cli" defaultValue={sp.cli ?? ""} aria-label="Cliente" style={{ maxWidth: 220 }}><option value="">Todos os clientes</option>{d.clients.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
+        <label className="fl">Obra <input type="text" name="obra" defaultValue={sp.obra ?? ""} placeholder="nome ou endereço" /></label>
+        {mode === "lista" && <Sel name="etapa" defaultValue={sp.etapa ?? ""} aria-label="Etapa"><option value="">Todas as etapas</option>{cols.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}</Sel>}
       </FilterBar>
-      <div className="tbl">
-        {d.rows.length ? (
-          <table><thead><tr><th className="num">Nº</th><th>Emissão</th><th>Fornecedor</th><th>Itens</th><th>Previsão</th><th className="num">Total</th><th>Situação</th><th>Recebido</th></tr></thead>
-            <tbody>{d.rows.map(({ o, f, q, r, first, n }) => {
-              const late = o.deliveryDate && o.deliveryDate < hoje && ["ENVIADO", "RECEBIDO_PARCIAL"].includes(o.status);
-              const pct = Number(q) ? (Number(r) / Number(q)) * 100 : 0;
-              return (
-                <ClickRow key={o.id} href={`/compras/pedidos/${o.id}`}><td className="num"><b>{o.number}</b></td><td className="code">{fmtD(o.issueDate)}</td><td>{f}</td>
-                  <td className="wrap" style={{ fontSize: 12.5, maxWidth: 260 }}>{first ?? "—"}{n > 1 && <span className="muted"> +{n - 1}</span>}</td>
-                  <td><span className={`badge${late ? " bad" : ""}`}>{fmtD(o.deliveryDate)}</span></td><td className="num"><b>{fmtMoney(o.total)}</b></td>
-                  <td><StatusBadge color={PO_STATUS[o.status]?.color ?? "#6B7785"} label={PO_STATUS[o.status]?.label ?? o.status} /></td>
-                  <td><div className="cell-prog" style={{ ["--c" as string]: "#2E7D4F", minWidth: 90 }}><div className="prog"><i style={{ width: `${pct}%` }} /></div><span className="prog-t">{Math.round(pct)}%</span></div></td></ClickRow>
-              );
-            })}</tbody></table>
-        ) : <Empty title="Nenhum pedido de compra">Crie um pedido ou conclua uma cotação.</Empty>}
-      </div>
+      {mode === "quadro" ? <PurchaseBoard stages={cols.map((x) => ({ id: x.id, name: x.name, color: x.color, kind: x.kind }))} cards={cards} canEdit={s.edit} /> : (
+        <div className="tbl">
+          {d.rows.length ? (
+            <table><thead><tr><th className="num">Nº</th><th>Emissão</th><th>Fornecedor</th><th>Cliente / obra</th><th>Itens</th><th>Previsão</th><th className="num">Total</th><th>Etapa</th><th>Recebido</th>
+              {d.fields.map((f) => <th key={f.id} data-hide={f.onCard ? undefined : ""}>{f.label}</th>)}</tr></thead>
+              <tbody>{d.rows.map(({ o, f, stage, cli, first, n }, k) => {
+                const sg = stageOf(stage);
+                const late = o.deliveryDate && o.deliveryDate < hoje && ["RASCUNHO", "ENVIADO", "RECEBIDO_PARCIAL"].includes(o.status);
+                const pct = cards[k].received;
+                return (
+                  <ClickRow key={o.id} href={`/compras/pedidos/${o.id}`}><td className="num"><b>{o.number}</b></td><td className="code">{fmtD(o.issueDate)}</td><td>{f}</td>
+                    <td style={{ fontSize: 12.5 }}>{cli ?? "—"}{o.work && <div className="t-sub">{o.work}</div>}</td>
+                    <td className="wrap" style={{ fontSize: 12.5, maxWidth: 240 }}>{first ?? "—"}{n > 1 && <span className="muted"> +{n - 1}</span>}</td>
+                    <td><span className={`badge${late ? " bad" : ""}`}>{fmtD(o.deliveryDate)}</span></td><td className="num"><b>{fmtMoney(o.total)}</b></td>
+                    <td><StatusBadge color={sg?.color ?? PO_STATUS[o.status]?.color ?? "#6B7785"} label={sg?.name ?? PO_STATUS[o.status]?.label ?? o.status} /></td>
+                    <td><div className="cell-prog" style={{ ["--c" as string]: "#2E7D4F", minWidth: 90 }}><div className="prog"><i style={{ width: `${pct}%` }} /></div><span className="prog-t">{Math.round(pct)}%</span></div></td>
+                    {d.fields.map((x) => <td key={x.id} style={{ fontSize: 12.5 }}>{o.custom[x.id] ?? "—"}</td>)}</ClickRow>
+                );
+              })}</tbody></table>
+          ) : <Empty title="Nenhum pedido de compra neste filtro">Ajuste a busca ou crie um pedido.</Empty>}
+        </div>
+      )}
     </>
   );
 }
@@ -224,6 +266,8 @@ export async function POPage({ params }: { params: Promise<{ id: string }> }) {
   const [sups, opts] = await Promise.all([suppliersOf(s), s.tx(async (tx) => ({
     methods: await tx.select({ id: E.paymentMethods.id, n: E.paymentMethods.name }).from(E.paymentMethods).where(eq(E.paymentMethods.active, true)).orderBy(asc(E.paymentMethods.name)),
     terms: await tx.select({ id: E.paymentTerms.id, name: E.paymentTerms.name, days: E.paymentTerms.days }).from(E.paymentTerms).where(eq(E.paymentTerms.active, true)).orderBy(asc(E.paymentTerms.name)),
+    stages: await tx.select({ id: E.purchaseStages.id, name: E.purchaseStages.name, color: E.purchaseStages.color, kind: E.purchaseStages.kind, active: E.purchaseStages.active }).from(E.purchaseStages).orderBy(asc(E.purchaseStages.position)),
+    fields: await tx.select().from(E.customFields).where(and(eq(E.customFields.entity, "purchase_order"), eq(E.customFields.active, true))).orderBy(asc(E.customFields.position)),
     locs: await tx.select().from(E.stockLocations).where(eq(E.stockLocations.active, true)).orderBy(asc(E.stockLocations.code)),
   }))]);
   const d = isNew ? null : await s.tx(async (tx) => {
@@ -233,7 +277,8 @@ export async function POPage({ params }: { params: Promise<{ id: string }> }) {
     const moves = await tx.select({ m: E.stockMovements, i: E.items }).from(E.stockMovements).innerJoin(E.items, eq(E.items.id, E.stockMovements.itemId)).where(eq(E.stockMovements.purchaseOrderId, id)).orderBy(desc(E.stockMovements.date));
     const tits = await tx.select().from(E.finTitles).where(and(eq(E.finTitles.originType, "PC"), eq(E.finTitles.originId, id))).orderBy(asc(E.finTitles.dueDate));
     const files = await loadAttachments(tx, "purchase_order", id);
-    return { o, lines, moves, tits, files };
+    const [cli] = o.clientId ? await tx.select({ n: sql<string>`coalesce(${E.partners.tradeName}, ${E.partners.name})` }).from(E.partners).where(eq(E.partners.id, o.clientId)) : [];
+    return { o, lines, moves, tits, files, cli };
   });
   if (!isNew && !d) notFound();
   const o = d?.o;
@@ -243,15 +288,21 @@ export async function POPage({ params }: { params: Promise<{ id: string }> }) {
     <>
       <PageHead title={isNew ? "Novo pedido de compra" : `Pedido de compra ${o!.number}`} back={{ href: "/compras/pedidos", label: "Pedidos de compra" }}
         actions={o && <>
+          <NotifyButton link={`/compras/pedidos/${o.id}`} label={`Pedido de compra ${o.number}`} suggest={`Acompanhar o pedido de compra ${o.number}`} />
           <BtnLink href={`/compras/pedidos/${o.id}/imprimir`} icon="print">Imprimir</BtnLink>
           {canReceive && <ReceiveButton poId={o.id} locations={opts.locs.map((l) => [l.id, `${l.code} · ${l.name}`])} defaultLocation={defLoc}
             lines={d!.lines.map(({ l, i }) => ({ id: l.id, name: i.name, unit: i.unit, qty: Number(l.qty), received: Number(l.receivedQty), price: Number(l.price) * (1 - Number(l.discountPct) / 100) }))} />}
           {s.edit && ["RASCUNHO", "CANCELADO"].includes(o.status) && <ActionButton className="btn btn-danger" confirm={`Excluir o pedido de compra ${o.number}?`} action={deletePurchaseOrderAction.bind(null, o.id)}><Icon name="trash" size={16} /></ActionButton>}
         </>}>
-        {o && <div className="tl" style={{ marginTop: 6 }}><StatusBadge color={PO_STATUS[o.status]?.color ?? "#6B7785"} label={PO_STATUS[o.status]?.label ?? o.status} /></div>}
+        {o && <div className="tl" style={{ marginTop: 6 }}>{(() => { const sg = opts.stages.find((x) => x.id === o.stageId);
+          return <StatusBadge color={sg?.color ?? PO_STATUS[o.status]?.color ?? "#6B7785"} label={sg?.name ?? PO_STATUS[o.status]?.label ?? o.status} />; })()}
+          {o.status === "RECEBIDO_PARCIAL" && <span className="muted" style={{ fontSize: 12.5 }}>Falta receber parte dos itens.</span>}</div>}
       </PageHead>
       <PurchaseOrderEditor key={o?.updatedAt.toISOString() ?? "novo"} canEdit={s.edit} suppliers={sups.map((x) => [x.id, x.n])} methods={opts.methods.map((m) => [m.id, m.n])} terms={opts.terms}
-        data={{ id: o?.id, status: o?.status ?? "RASCUNHO", partnerId: o?.partnerId ?? "", issueDate: o?.issueDate ?? today(), deliveryDate: o?.deliveryDate ?? "", buyer: o?.buyer ?? s.user.name,
+        stages={opts.stages.filter((x) => x.active || x.id === o?.stageId).map(({ active: _a, ...x }) => x)}
+        fields={opts.fields.map((f) => ({ id: f.id, label: f.label, type: f.type, options: f.options, required: f.required }))}
+        data={{ id: o?.id, status: o?.status ?? "RASCUNHO", stageId: o?.stageId ?? opts.stages.find((x) => x.kind === "RASCUNHO" && x.active)?.id ?? "",
+          clientId: o?.clientId ?? "", clientLabel: d?.cli?.n ?? "", work: o?.work ?? "", custom: o?.custom ?? {}, partnerId: o?.partnerId ?? "", issueDate: o?.issueDate ?? today(), deliveryDate: o?.deliveryDate ?? "", buyer: o?.buyer ?? s.user.name,
           paymentMethodId: o?.paymentMethodId ?? opts.methods.find((m) => m.n === "Boleto")?.id ?? "", paymentTermId: o?.paymentTermId ?? "", installments: o?.installments ?? [], discount: Number(o?.discount ?? 0), freight: Number(o?.freight ?? 0), notes: o?.notes ?? "",
           lines: (d?.lines ?? []).map(({ l, i }) => ({ key: l.id, itemId: i.id, code: i.code, name: i.name, unit: i.unit, qty: Number(l.qty), price: Number(l.price), discountPct: Number(l.discountPct), received: Number(l.receivedQty) })) }} />
       {d && (

@@ -4,7 +4,8 @@ import { z } from "zod";
 import { act, NO_ACCESS } from "@/lib/access";
 import { audit } from "@/lib/audit";
 import * as E from "@/db/erp";
-import { balances, balanceOf, insertMovements, nextNumber, ruleMsg, RuleError } from "./common";
+import { balances, balanceOf, insertMovements, nextNumber, poKind, poStageIdFor, ruleMsg, RuleError } from "./common";
+import type { Tx } from "@/lib/db";
 import { docTotals, installments, isDate, today, addDays } from "@/lib/dates";
 import type { ActionState } from "@/lib/action";
 
@@ -201,7 +202,7 @@ export async function concludeQuotationAction(id: string): Promise<ActionState> 
         const t = docTotals(lines, 0, Number(sp.freight));
         const number = await nextNumber(tx, s.tenant.id, "purchase_order", E.purchaseOrders, E.purchaseOrders.number);
         const delivery = addDays(today(), sp.deliveryDays ?? 10);
-        const [po] = await tx.insert(E.purchaseOrders).values({ tenantId: s.tenant.id, number, status: "RASCUNHO", partnerId: sp.partnerId, issueDate: today(), deliveryDate: delivery, buyer: s.user.name,
+        const [po] = await tx.insert(E.purchaseOrders).values({ tenantId: s.tenant.id, number, status: "RASCUNHO", stageId: await poStageIdFor(tx, "RASCUNHO"), partnerId: sp.partnerId, issueDate: today(), deliveryDate: delivery, buyer: s.user.name,
           paymentMethodId: pm?.id ?? null, installments: installments(t.total, [28], delivery), freight: sp.freight, total: String(t.total), quotationId: q.id,
           notes: [`Cotação ${q.number}`, sp.paymentTerms ? `Condição combinada: ${sp.paymentTerms}` : null].filter(Boolean).join(" · ") }).returning({ id: E.purchaseOrders.id });
         await tx.insert(E.purchaseOrderItems).values(lines.map((l, i) => ({ tenantId: s.tenant.id, orderId: po.id, itemId: l.itemId, qty: String(l.qty), price: String(l.price), position: i })));
@@ -238,7 +239,17 @@ const poSchema = z.object({
   paymentMethodId: z.string().max(64).optional().nullable(), paymentTermId: z.string().max(64).optional().nullable(),
   installments: z.array(z.object({ n: z.number().int(), due: z.string().refine(isDate), value: num })).max(120), discount: num.min(0), freight: num.min(0), notes: z.string().max(4000).optional().nullable(),
   items: z.array(z.object({ id: z.string().max(64).optional(), itemId: z.string().max(64), qty: num.positive(), price: num.min(0), discountPct: num.min(0).max(100) })).min(1, "Inclua pelo menos um item.").max(500),
+  stageId: z.string().max(64).optional().nullable(), clientId: z.string().max(64).optional().nullable(), work: z.string().max(200).optional().nullable(),
+  custom: z.record(z.string().max(64), z.string().max(500)).default({}),
 });
+
+/** Campos personalizados do pedido de compra: confere os obrigatórios e guarda só os que existem. */
+async function poCustom(tx: Tx, custom: Record<string, string>, check: boolean) {
+  const cf = await tx.select().from(E.customFields).where(and(eq(E.customFields.entity, "purchase_order"), eq(E.customFields.active, true)));
+  const miss = check && cf.find((f) => f.required && !(custom[f.id] ?? "").trim());
+  if (miss) throw new RuleError(`Preencha o campo “${miss.label}”.`);
+  return Object.fromEntries(cf.filter((f) => custom[f.id] != null && custom[f.id] !== "").map((f) => [f.id, custom[f.id]]));
+}
 export async function savePurchaseOrderAction(input: z.input<typeof poSchema>): Promise<ActionState> {
   const s = await act("compras");
   if (!s) return NO_ACCESS;
@@ -249,21 +260,31 @@ export async function savePurchaseOrderAction(input: z.input<typeof poSchema>): 
   let id = d.id ?? "";
   try {
     await s.tx(async (tx) => {
+      const custom = await poCustom(tx, d.custom, d.status !== "CANCELADO");
+      if (d.stageId) {
+        const [st] = await tx.select({ kind: E.purchaseStages.kind }).from(E.purchaseStages).where(eq(E.purchaseStages.id, d.stageId)).limit(1);
+        if (!st) throw new RuleError("Etapa inválida.");
+      }
       const v = { partnerId: d.partnerId, issueDate: d.issueDate, deliveryDate: d.deliveryDate, buyer: d.buyer?.trim() || s.user.name, paymentMethodId: d.paymentMethodId || null, paymentTermId: d.paymentTermId || null,
-        installments: d.installments, discount: String(d.discount), freight: String(d.freight), total: String(t.total), notes: d.notes?.trim() || null };
+        installments: d.installments, discount: String(d.discount), freight: String(d.freight), total: String(t.total), notes: d.notes?.trim() || null,
+        clientId: d.clientId || null, work: d.work?.trim() || null, custom };
       if (id) {
         const [cur] = await tx.select().from(E.purchaseOrders).where(eq(E.purchaseOrders.id, id)).limit(1).for("update");
         if (!cur) throw new RuleError("Pedido não encontrado.");
         if (["RECEBIDO", "RECEBIDO_PARCIAL"].includes(cur.status)) {
-          // já recebido: só deixa ajustar observações e datas
-          await tx.update(E.purchaseOrders).set({ notes: v.notes, deliveryDate: v.deliveryDate }).where(eq(E.purchaseOrders.id, id));
+          // já recebido: só deixa ajustar observações, datas, cliente, obra, campos e a etapa (entre as do mesmo comportamento)
+          const [st] = d.stageId ? await tx.select({ kind: E.purchaseStages.kind }).from(E.purchaseStages).where(eq(E.purchaseStages.id, d.stageId)) : [];
+          await tx.update(E.purchaseOrders).set({ notes: v.notes, deliveryDate: v.deliveryDate, clientId: v.clientId, work: v.work, custom: v.custom,
+            ...(st && st.kind === poKind(cur.status) ? { stageId: d.stageId } : {}) }).where(eq(E.purchaseOrders.id, id));
           return;
         }
-        await tx.update(E.purchaseOrders).set({ ...v, status: d.status }).where(eq(E.purchaseOrders.id, id));
+        const [stg] = d.stageId ? await tx.select({ kind: E.purchaseStages.kind }).from(E.purchaseStages).where(eq(E.purchaseStages.id, d.stageId)) : [];
+        await tx.update(E.purchaseOrders).set({ ...v, status: d.status, stageId: stg?.kind === d.status ? d.stageId : await poStageIdFor(tx, d.status, cur.stageId) }).where(eq(E.purchaseOrders.id, id));
         await tx.delete(E.purchaseOrderItems).where(eq(E.purchaseOrderItems.orderId, id));
       } else {
         const number = await nextNumber(tx, s.tenant.id, "purchase_order", E.purchaseOrders, E.purchaseOrders.number);
-        const [r] = await tx.insert(E.purchaseOrders).values({ ...v, status: d.status, number, tenantId: s.tenant.id }).returning({ id: E.purchaseOrders.id });
+        const [stg] = d.stageId ? await tx.select({ kind: E.purchaseStages.kind }).from(E.purchaseStages).where(eq(E.purchaseStages.id, d.stageId)) : [];
+        const [r] = await tx.insert(E.purchaseOrders).values({ ...v, status: d.status, stageId: stg?.kind === d.status ? d.stageId : await poStageIdFor(tx, d.status), number, tenantId: s.tenant.id }).returning({ id: E.purchaseOrders.id });
         id = r.id;
       }
       await tx.insert(E.purchaseOrderItems).values(d.items.map((i, k) => ({ tenantId: s.tenant.id, orderId: id, itemId: i.itemId, qty: String(i.qty), price: String(i.price), discountPct: String(i.discountPct), position: k })));
@@ -272,6 +293,43 @@ export async function savePurchaseOrderAction(input: z.input<typeof poSchema>): 
     return { error: ruleMsg(err) };
   }
   return { ok: true, message: "Pedido de compra salvo.", redirectTo: d.id ? undefined : `/compras/pedidos/${id}` };
+}
+
+/**
+ * Muda a etapa do pedido de compra (arrastar no quadro). Se a etapa tem outro comportamento, troca a situação
+ * com as regras: Recebido só pelo recebimento; pedido com recebimento não volta para rascunho nem é cancelado.
+ */
+export async function setPurchaseStageAction(id: string, stageId: string): Promise<ActionState> {
+  const s = await act("compras");
+  if (!s) return NO_ACCESS;
+  try {
+    const msg = await s.tx(async (tx) => {
+      const [st] = await tx.select().from(E.purchaseStages).where(eq(E.purchaseStages.id, stageId)).limit(1);
+      const [po] = await tx.select().from(E.purchaseOrders).where(eq(E.purchaseOrders.id, id)).limit(1).for("update");
+      if (!st || !po) throw new RuleError("Pedido ou etapa não encontrada.");
+      const kind = poKind(po.status);
+      if (st.kind !== kind) {
+        if (st.kind === "RECEBIDO") throw new RuleError(`Para levar o pedido ${po.number} para “${st.name}”, registre o recebimento (botão Receber no pedido): ele dá entrada no estoque e gera as contas a pagar.`);
+        if (po.status === "RECEBIDO" || po.status === "RECEBIDO_PARCIAL") {
+          if (st.kind !== "ENVIADO" || po.status === "RECEBIDO") throw new RuleError(`O pedido ${po.number} já tem recebimento e não pode ir para “${st.name}”.`);
+        }
+        if (st.kind === "CANCELADO") {
+          const [{ c }] = await tx.select({ c: sql<number>`count(*)::int` }).from(E.stockMovements).where(eq(E.stockMovements.purchaseOrderId, id));
+          if (c) throw new RuleError(`O pedido ${po.number} já teve recebimento e não pode ser cancelado.`);
+        }
+        if (st.kind === "RASCUNHO" || st.kind === "ENVIADO" || st.kind === "CANCELADO") {
+          await tx.update(E.purchaseOrders).set({ status: po.status === "RECEBIDO_PARCIAL" ? po.status : st.kind, stageId }).where(eq(E.purchaseOrders.id, id));
+          return `Pedido ${po.number} em “${st.name}”.`;
+        }
+      }
+      await tx.update(E.purchaseOrders).set({ stageId }).where(eq(E.purchaseOrders.id, id));
+      return `Pedido ${po.number} em “${st.name}”.`;
+    });
+    await audit({ action: "compra.etapa", tenantId: s.tenant.id, userId: s.user.id, userEmail: s.user.email, entity: "pedido_compra", entityId: id, data: { etapa: stageId } });
+    return { ok: true, message: msg };
+  } catch (err) {
+    return { error: ruleMsg(err) };
+  }
 }
 
 export async function deletePurchaseOrderAction(id: string): Promise<ActionState> {
@@ -330,7 +388,7 @@ export async function receivePurchaseAction(input: z.input<typeof recSchema>): P
       }
       const after = await tx.select().from(E.purchaseOrderItems).where(eq(E.purchaseOrderItems.orderId, po.id));
       const status = after.every((l) => Number(l.receivedQty) >= Number(l.qty) - 1e-9) ? "RECEBIDO" : "RECEBIDO_PARCIAL";
-      await tx.update(E.purchaseOrders).set({ status }).where(eq(E.purchaseOrders.id, po.id));
+      await tx.update(E.purchaseOrders).set({ status, stageId: await poStageIdFor(tx, status, po.stageId) }).where(eq(E.purchaseOrders.id, po.id));
       // atualiza o último preço do fornecedor para cada item
       for (const l of lines) await tx.insert(E.itemSuppliers).values({ tenantId: s.tenant.id, itemId: l.itemId, partnerId: po.partnerId, lastPrice: l.price })
         .onConflictDoUpdate({ target: [E.itemSuppliers.tenantId, E.itemSuppliers.itemId, E.itemSuppliers.partnerId], set: { lastPrice: l.price } });
