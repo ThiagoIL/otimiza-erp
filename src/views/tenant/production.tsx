@@ -7,7 +7,7 @@ import * as E from "@/db/erp";
 import { BtnLink, Empty, PageHead, Panel, StatusBadge } from "@/components/ui";
 import { ActionButton, ClickRow, FilterBar, FilterTabs } from "@/components/client";
 import { Icon } from "@/components/Icon";
-import { AssemblyFromOp, OpBoard, OpHeader, OpStructure, OutputForm, QueueActions, RequisitionButton, StageSelect, type OpCard } from "@/components/ProductionUI";
+import { AssemblyFromOp, ImportOpsButton, OpBoard, OpHeader, OpStructure, OutputForm, QueueActions, RequisitionButton, StageSelect, type OpCard } from "@/components/ProductionUI";
 import { StockMoveButtons } from "@/components/StockMove";
 import { NotifyButton } from "@/components/Comm";
 import { Attachments } from "@/components/Attachments";
@@ -19,13 +19,35 @@ import { fmtD, today } from "@/lib/dates";
 import { PRIORITIES } from "@/lib/consts";
 
 type SP = Record<string, string | undefined>;
+const cfOf = (f: (typeof E.customFields.$inferSelect)[]) => f.map((x) => ({ id: x.id, label: x.label, type: x.type, options: x.options, required: x.required }));
 
 async function lookups(s: PageCtx) {
   return s.tx(async (tx) => ({
     stages: await tx.select().from(E.productionStages).orderBy(asc(E.productionStages.position)),
     centers: await tx.select({ id: E.workCenters.id, n: E.workCenters.name }).from(E.workCenters).where(eq(E.workCenters.active, true)).orderBy(asc(E.workCenters.name)),
     team: await tx.select({ id: E.teamMembers.id, n: E.teamMembers.name, role: E.teamMembers.role }).from(E.teamMembers).where(eq(E.teamMembers.active, true)).orderBy(asc(E.teamMembers.name)),
+    fields: await tx.select().from(E.customFields).where(and(eq(E.customFields.entity, "production_order"), eq(E.customFields.active, true))).orderBy(asc(E.customFields.position)),
   }));
+}
+
+/** Cartões do quadro de OPs (também usado no quadro da TV). */
+export async function opCards(s: PageCtx, c: SQL[]) {
+  const rows = await s.tx(async (tx) => tx.select({
+    o: E.productionOrders, i: E.items, cli: sql<string | null>`coalesce(${E.partners.tradeName}, ${E.partners.name})`, pv: E.salesOrders.number, place: E.salesOrders.deliveryPlace, wc: E.workCenters.name, resp: E.teamMembers.name, kind: E.productionStages.kind,
+    req: sql<string>`(select coalesce(sum(qty_required),0)::text from production_order_components c where c.production_order_id = "production_orders"."id")`,
+    done: sql<string>`(select coalesce(sum(least(qty_done, qty_required)),0)::text from production_order_components c where c.production_order_id = "production_orders"."id")`,
+    live: sql<boolean>`exists (select 1 from time_entries t where t.production_order_id = "production_orders"."id" and t."end" is null)`,
+  }).from(E.productionOrders).innerJoin(E.items, eq(E.items.id, E.productionOrders.itemId)).innerJoin(E.productionStages, eq(E.productionStages.id, E.productionOrders.stageId))
+    .leftJoin(E.partners, eq(E.partners.id, E.productionOrders.partnerId)).leftJoin(E.salesOrders, eq(E.salesOrders.id, E.productionOrders.salesOrderId))
+    .leftJoin(E.workCenters, eq(E.workCenters.id, E.productionOrders.workCenterId)).leftJoin(E.teamMembers, eq(E.teamMembers.id, E.productionOrders.responsibleId))
+    .where(and(...c)).orderBy(desc(E.productionOrders.number)));
+  const cards: OpCard[] = rows.map((r) => {
+    const req = Number(r.req), done = Number(r.done);
+    const prog = r.kind === "finalizada" ? 100 : req > 0 ? Math.round((done / req) * 100) : Math.round((Number(r.o.qtyProduced) / Math.max(1e-9, Number(r.o.qty))) * 100);
+    return { id: r.o.id, number: r.o.number, item: r.i.name, qty: Number(r.o.qty), produced: Number(r.o.qtyProduced), unit: r.i.unit, client: r.cli, order: r.pv, center: r.wc, resp: r.resp,
+      priority: r.o.priority, needDate: r.o.needDate, stageId: r.o.stageId, progress: Math.min(100, prog), live: r.live, work: r.o.work ?? r.place ?? null, custom: r.o.custom };
+  });
+  return { rows, cards };
 }
 
 // ---------------------------------------------------------------- Pedidos a produzir
@@ -101,7 +123,7 @@ export async function OpsPage({ searchParams }: { searchParams: Promise<SP> }) {
   const mode = sp.modo === "lista" ? "lista" : "quadro";
   const L = await lookups(s);
   const c: SQL[] = [eq(E.productionOrders.tenantId, s.tenant.id)];
-  if (sp.q) { const q = `%${sp.q.trim()}%`; c.push(or(ilike(E.items.code, q), ilike(E.items.name, q), ilike(E.partners.name, q), ilike(E.partners.tradeName, q), sql`${E.productionOrders.number}::text = ${sp.q.trim()}`)!); }
+  if (sp.q) { const q = `%${sp.q.trim()}%`; c.push(or(ilike(E.items.code, q), ilike(E.items.name, q), ilike(E.partners.name, q), ilike(E.partners.tradeName, q), ilike(E.productionOrders.work, q), sql`${E.productionOrders.number}::text = ${sp.q.trim()}`)!); }
   if (sp.centro) c.push(eq(E.productionOrders.workCenterId, sp.centro));
   if (sp.resp) c.push(eq(E.productionOrders.responsibleId, sp.resp));
   if (sp.prio) c.push(eq(E.productionOrders.priority, sp.prio));
@@ -112,21 +134,7 @@ export async function OpsPage({ searchParams }: { searchParams: Promise<SP> }) {
   if (sit === "concluidas") c.push(sql`${E.productionStages.kind} = 'finalizada'`);
   else if (sit === "canceladas") c.push(sql`${E.productionStages.kind} = 'cancelada'`);
   else if (sit !== "todas") c.push(sql`${E.productionStages.kind} not in ('finalizada', 'cancelada')`);
-  const rows = await s.tx(async (tx) => tx.select({
-    o: E.productionOrders, i: E.items, cli: sql<string | null>`coalesce(${E.partners.tradeName}, ${E.partners.name})`, pv: E.salesOrders.number, wc: E.workCenters.name, resp: E.teamMembers.name, kind: E.productionStages.kind,
-    req: sql<string>`(select coalesce(sum(qty_required),0)::text from production_order_components c where c.production_order_id = "production_orders"."id")`,
-    done: sql<string>`(select coalesce(sum(least(qty_done, qty_required)),0)::text from production_order_components c where c.production_order_id = "production_orders"."id")`,
-    live: sql<boolean>`exists (select 1 from time_entries t where t.production_order_id = "production_orders"."id" and t."end" is null)`,
-  }).from(E.productionOrders).innerJoin(E.items, eq(E.items.id, E.productionOrders.itemId)).innerJoin(E.productionStages, eq(E.productionStages.id, E.productionOrders.stageId))
-    .leftJoin(E.partners, eq(E.partners.id, E.productionOrders.partnerId)).leftJoin(E.salesOrders, eq(E.salesOrders.id, E.productionOrders.salesOrderId))
-    .leftJoin(E.workCenters, eq(E.workCenters.id, E.productionOrders.workCenterId)).leftJoin(E.teamMembers, eq(E.teamMembers.id, E.productionOrders.responsibleId))
-    .where(and(...c)).orderBy(desc(E.productionOrders.number)));
-  const cards: OpCard[] = rows.map((r) => {
-    const req = Number(r.req), done = Number(r.done);
-    const prog = r.kind === "finalizada" ? 100 : req > 0 ? Math.round((done / req) * 100) : Math.round((Number(r.o.qtyProduced) / Math.max(1e-9, Number(r.o.qty))) * 100);
-    return { id: r.o.id, number: r.o.number, item: r.i.name, qty: Number(r.o.qty), produced: Number(r.o.qtyProduced), unit: r.i.unit, client: r.cli, order: r.pv, center: r.wc, resp: r.resp,
-      priority: r.o.priority, needDate: r.o.needDate, stageId: r.o.stageId, progress: Math.min(100, prog), live: r.live };
-  });
+  const { rows, cards } = await opCards(s, c);
   const stages = L.stages.filter((x) => x.kind !== "cancelada" || sp.canceladas).map((x) => ({ id: x.id, name: x.name, color: x.color, kind: x.kind }));
   const hoje = today();
   const qs = (m: string) => `/ops?${new URLSearchParams({ ...Object.fromEntries(Object.entries(sp).filter(([k, v]) => v && k !== "modo") as [string, string][]), ...(m === "lista" ? { modo: "lista" } : {}) })}`;
@@ -138,11 +146,13 @@ export async function OpsPage({ searchParams }: { searchParams: Promise<SP> }) {
             <Link className="btn btn-ghost btn-sm" href={qs("quadro")} style={mode === "quadro" ? { background: "var(--surface)", fontWeight: 700 } : undefined}><Icon name="board" size={15} /> Quadro</Link>
             <Link className="btn btn-ghost btn-sm" href={qs("lista")} style={mode === "lista" ? { background: "var(--surface)", fontWeight: 700 } : undefined}><Icon name="list" size={15} /> Lista</Link>
           </div>
+          <BtnLink href="/dashboards/quadro" icon="tv">Modo TV</BtnLink>
+          {s.edit && <ImportOpsButton fields={L.fields.map((f) => f.label)} />}
           {s.edit && <BtnLink href="/ops/nova" primary icon="plus">Nova OP</BtnLink>}
         </>} />
       <FilterBar solo={mode === "quadro"} right={<span className="count">{cards.length} OPs</span>}>
         {mode === "lista" && <input type="hidden" name="modo" value="lista" />}
-        <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Nº, item ou cliente" aria-label="Buscar OP" /></div>
+        <div className="search"><Icon name="search" size={16} /><input type="search" name="q" defaultValue={sp.q ?? ""} placeholder="Nº, item, cliente ou obra" aria-label="Buscar OP" /></div>
         <Sel name="centro" defaultValue={sp.centro ?? ""} aria-label="Centro"><option value="">Todos os centros</option>{L.centers.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
         <Sel name="resp" defaultValue={sp.resp ?? ""} aria-label="Responsável"><option value="">Todos os responsáveis</option>{L.team.map((x) => <option key={x.id} value={x.id}>{x.n}</option>)}</Sel>
         <select name="prio" defaultValue={sp.prio ?? ""} aria-label="Prioridade"><option value="">Todas as prioridades</option>{Object.keys(PRIORITIES).map((p) => <option key={p}>{p}</option>)}</select>
@@ -151,7 +161,7 @@ export async function OpsPage({ searchParams }: { searchParams: Promise<SP> }) {
         <select name="sit" defaultValue={sp.sit ?? ""} aria-label="Situação"><option value="">Em aberto</option><option value="concluidas">Concluídas</option><option value="canceladas">Canceladas</option><option value="todas">Todas</option></select>
       </FilterBar>
       {!L.stages.length ? <div className="panel"><Empty title="Cadastre as etapas da produção">O quadro usa as etapas como colunas.<br /><BtnLink href="/producao/configuracoes" primary>Cadastrar etapas</BtnLink></Empty></div>
-        : mode === "quadro" ? <OpBoard stages={stages} ops={cards} canEdit={s.edit} /> : (
+        : mode === "quadro" ? <OpBoard stages={stages} ops={cards} canEdit={s.edit} fields={L.fields.map((f) => ({ id: f.id, label: f.label, onCard: f.onCard }))} /> : (
           <div className="tbl">
             {rows.length ? (
               <table><thead><tr><th className="num">Nº</th><th>Produto</th><th className="num">Produzido</th><th>Cliente / pedido</th><th>Necessidade</th><th>Etapa</th><th>Centro / responsável</th><th>Progresso</th></tr></thead>
@@ -161,7 +171,7 @@ export async function OpsPage({ searchParams }: { searchParams: Promise<SP> }) {
                   return (
                     <ClickRow key={r.o.id} href={`/ops/${r.o.id}`}><td className="num"><b>{r.o.number}</b></td><td className="desc">{r.i.name}<div className="t-sub code">{r.i.code}</div></td>
                       <td className="num">{fmtQty(r.o.qtyProduced)} de {fmtQty(r.o.qty)}</td>
-                      <td style={{ fontSize: 12.5 }}>{r.cli ?? "—"}{r.pv && <div className="muted">PV {r.pv}</div>}</td>
+                      <td style={{ fontSize: 12.5 }}>{r.cli ?? "—"}{r.pv && <div className="muted">PV {r.pv}</div>}{r.o.work && <div className="t-sub">{r.o.work}</div>}</td>
                       <td><span className={`badge${late ? " bad" : ""}`}>{fmtD(r.o.needDate)}</span></td>
                       <td>{st && <StatusBadge color={st.color} label={st.name} />}</td><td>{r.wc ?? "—"}{r.resp && <div className="t-sub">{r.resp}</div>}</td>
                       <td><div className="cell-prog" style={{ ["--c" as string]: st?.color ?? "#2E7D4F" }}><div className="prog"><i style={{ width: `${cards[k].progress}%` }} /></div><span className="prog-t">{cards[k].progress}%</span></div></td>
@@ -192,7 +202,7 @@ export async function OpNew({ searchParams }: { searchParams: Promise<SP> }) {
     <>
       <PageHead title="Nova ordem de produção" sub="Escolha o produto: a estrutura dele é copiada para a OP já multiplicada pela quantidade." back={{ href: "/ops", label: "Ordens de produção" }} />
       <div className="sheet">
-        <OpHeader canEdit op={{ itemId: "", itemLabel: "", qty: 1, salesOrderId: sp.pedido ?? "", partnerId: "", workCenterId: "", responsibleId: "", priority: "Normal", startDate: today(), needDate: "", notes: "", stageId: first?.id }}
+        <OpHeader canEdit fields={cfOf(L.fields)} op={{ itemId: "", itemLabel: "", qty: 1, salesOrderId: sp.pedido ?? "", partnerId: "", workCenterId: "", responsibleId: "", priority: "Normal", startDate: today(), needDate: "", notes: "", stageId: first?.id, work: "", custom: {} }}
           orders={F.orders.map((o) => [o.id, `PV ${o.n} · ${o.cli}`])} clients={F.clients.map((c) => [c.id, c.n])} centers={L.centers.map((c) => [c.id, c.n])} team={L.team.map((c) => [c.id, c.n])}
           stages={L.stages.filter((x) => x.kind !== "cancelada").map((x) => [x.id, x.name])} />
       </div>
@@ -224,7 +234,8 @@ export async function OpDetail({ params }: { params: Promise<{ id: string }> }) 
     const bal = await balances(tx, { itemIds: compIds });
     const costs = s.access.costs ? await opCosts(tx, op) : null;
     const files = await loadAttachments(tx, "production_order", id);
-    return { op, item, comps, moves, outputs, asms, times, so, cli, locs, bal, costs, files };
+    const [meas] = op.measurementId ? await tx.select({ id: E.measurements.id, number: E.measurements.number }).from(E.measurements).where(eq(E.measurements.id, op.measurementId)) : [];
+    return { op, item, comps, moves, outputs, asms, times, so, cli, locs, bal, costs, files, meas };
   });
   if (!d) notFound();
   const { op, item } = d;
@@ -246,9 +257,11 @@ export async function OpDetail({ params }: { params: Promise<{ id: string }> }) 
   return (
     <>
       <PageHead title={`OP ${op.number} · ${item.name}`} back={{ href: "/ops", label: "Ordens de produção" }}
-        sub={[`${fmtQty(op.qty)} ${item.unit}`, d.cli ? d.cli.tradeName || d.cli.name : null, d.so ? `Pedido ${d.so.number}` : null, op.needDate ? `necessidade ${fmtD(op.needDate)}` : null].filter(Boolean).join(" · ")}
+        sub={<>{[`${fmtQty(op.qty)} ${item.unit}`, d.cli ? d.cli.tradeName || d.cli.name : null, d.so ? `Pedido ${d.so.number}` : null, op.work, op.needDate ? `necessidade ${fmtD(op.needDate)}` : null].filter(Boolean).join(" · ")}
+          {d.meas && <> · <Link href={`/medicoes/${d.meas.id}`}>Medição {d.meas.number}</Link></>}</>}
         actions={<>
           <NotifyButton link={`/ops/${op.id}`} label={`OP ${op.number}`} suggest={`Revisar a OP ${op.number} · ${item.name}`} />
+          {stage && stage.kind !== "finalizada" && stage.kind !== "cancelada" && <BtnLink href={`/apontar?tipo=FABRICA&alvo=${op.id}`} icon="check">Apontar</BtnLink>}
           {s.edit ? <StageSelect opId={op.id} stageId={op.stageId} stages={stages} /> : stage && <StatusBadge color={stage.color} label={stage.name} />}
           {s.edit && <ActionButton className="btn btn-danger" confirm={`Excluir a OP ${op.number}?`} action={deleteOpAction.bind(null, op.id)}><Icon name="trash" size={16} /></ActionButton>}
         </>} />
@@ -262,8 +275,8 @@ export async function OpDetail({ params }: { params: Promise<{ id: string }> }) 
       <div className="sheet">
         <nav className="sec-nav"><a href="#dados">Dados da OP</a><a href="#estrutura">Estrutura</a><a href="#producao">Produção apontada</a><a href="#retiradas">Retiradas de estoque</a><a href="#montagens">Montagens</a><a href="#horas">Horas</a>{d.costs && <a href="#custos">Custos</a>}<a href="#anexos">Anexos</a></nav>
         <div id="dados">
-          <OpHeader canEdit={s.edit} op={{ id: op.id, itemId: op.itemId, itemLabel: `${item.name} · ${item.code}`, qty: Number(op.qty), salesOrderId: op.salesOrderId ?? "", partnerId: op.partnerId ?? "", workCenterId: op.workCenterId ?? "",
-            responsibleId: op.responsibleId ?? "", priority: op.priority, startDate: op.startDate ?? "", needDate: op.needDate ?? "", notes: op.notes ?? "" }}
+          <OpHeader canEdit={s.edit} fields={cfOf(L.fields)} op={{ id: op.id, itemId: op.itemId, itemLabel: `${item.name} · ${item.code}`, qty: Number(op.qty), salesOrderId: op.salesOrderId ?? "", partnerId: op.partnerId ?? "", workCenterId: op.workCenterId ?? "",
+            responsibleId: op.responsibleId ?? "", priority: op.priority, startDate: op.startDate ?? "", needDate: op.needDate ?? "", notes: op.notes ?? "", work: op.work ?? "", custom: op.custom }}
             orders={[...(d.so && d.so.status !== "APROVADO" ? [[d.so.id, `PV ${d.so.number}`] as [string, string]] : []), ...F.orders.map((o) => [o.id, `PV ${o.n} · ${o.cli}`] as [string, string])]}
             clients={F.clients.map((c) => [c.id, c.n])} centers={L.centers.map((c) => [c.id, c.n])} team={L.team.map((c) => [c.id, c.n])} />
         </div>
@@ -289,7 +302,7 @@ export async function OpDetail({ params }: { params: Promise<{ id: string }> }) 
         </Panel>
 
         <Panel id="montagens" className="sec-panel" title="Montagens desta OP" sub={`${fmtQty(sent)} de ${fmtQty(op.qtyProduced)} produzidas enviadas`}
-          actions={s.edit && <AssemblyFromOp opId={op.id} free={free} unit={item.unit} partnerId={op.partnerId} place={d.so?.deliveryPlace ?? ""} defaultName={`${item.name}${d.cli ? " · " + (d.cli.tradeName || d.cli.name) : ""}`} team={L.team.map((c) => [c.id, c.n])} due={op.needDate} />}>
+          actions={s.edit && <AssemblyFromOp opId={op.id} free={free} unit={item.unit} partnerId={op.partnerId} place={op.work ?? d.so?.deliveryPlace ?? ""} defaultName={op.work ? `${op.work} · ${item.name}` : `${item.name}${d.cli ? " · " + (d.cli.tradeName || d.cli.name) : ""}`} team={L.team.map((c) => [c.id, c.n])} due={op.needDate} />}>
           {d.asms.length ? <div className="tbl solo" style={{ border: 0, borderRadius: 0, maxHeight: "none" }}><table>
             <thead><tr><th className="num">Nº</th><th>Montagem</th><th className="num">Quantidade</th><th>Previsão</th><th>Andamento</th><th>Situação</th></tr></thead>
             <tbody>{d.asms.map(({ a, done, tot }) => <ClickRow key={a.id} href={`/montagens/${a.id}`}><td className="num"><b>{a.number}</b></td><td className="desc">{a.name}</td><td className="num">{fmtQty(a.qty)}</td><td className="code">{fmtD(a.dueDate)}</td>

@@ -1,0 +1,2 @@
+import { ProdReport } from "@/views/tenant/prod-reports";
+export default function Page(p: { searchParams: Promise<Record<string, string | undefined>> }) { return <ProdReport by="peso" searchParams={p.searchParams} />; }

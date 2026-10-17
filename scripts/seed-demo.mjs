@@ -143,6 +143,8 @@ try {
     ["it34", "PA-006", "SOBRE GRADE TRANSPORTE BOVINO LINHA MÉDIA 5000", null, "g07", "UN", "PA", 0, 14200, "e03", 0],
     ["it35", "SA-001", "ESTRUTURA BASE SOLDADA DO FURGÃO", "chassi, longarinas e travessas", "g07", "UN", "SA", 0, 0, "e02", 0],
     ["it36", "SA-002", "PAINEL LATERAL DO FURGÃO EM ALUMÍNIO", null, "g07", "UN", "SA", 0, 0, "e02", 0],
+    ["it37", "PA-010", "JANELA DE CORRER 2 FOLHAS EM ALUMÍNIO", "esquadria sob medida", "g07", "UN", "PA", 0, 1450, "e03", 0],
+    ["it38", "PA-011", "PORTA DE CORRER 4 FOLHAS EM ALUMÍNIO", "esquadria sob medida", "g07", "UN", "PA", 0, 3900, "e03", 0],
   ];
   const NCM = { it13: "72091700", it14: "72085200", it15: "72163100", it16: "73066100", it17: "76061220", it18: "73181500", it19: "73181600", it21: "32089010", it22: "32089010", it26: "85122022", it29: "87079090", it30: "87079090", it31: "87079090", it32: "87079090", it33: "87079090", it34: "87169090" };
   const FP = (k) => (["it13", "it14", "it15", "it16", "it17"].includes(k) ? "f01" : ["it06", "it07"].includes(k) ? "f03" : ["it21", "it22", "it23"].includes(k) ? "f04" : "f02");
@@ -447,6 +449,35 @@ try {
           ["Cozinha", "Ambiente", "a1", "p10", "p9", [[null, "Armário aéreo 1200 mm", 3, 0], [null, "Balcão de pia 1800 mm", 1, 0], [null, "Torre quente", 1, 0]]],
           ["Suíte", "Ambiente", "a1", "p8", "p9", [[null, "Guarda-roupa 3 portas", 1, 0], [null, "Cabeceira estofada", 1, 0]]]]]]]] });
 
+  // ---------- medição de obra (esquadrias): campos configuráveis e duas obras de exemplo ----------
+  const MF = {
+    lar: await ins("custom_fields", { entity: "measurement", label: "Largura (mm)", type: "numero", position: 1, required: true }),
+    alt: await ins("custom_fields", { entity: "measurement", label: "Altura (mm)", type: "numero", position: 2, required: true }),
+    vid: await ins("custom_fields", { entity: "measurement", label: "Vidro", type: "lista", options: ["Incolor 6 mm", "Fumê 6 mm", "Laminado 8 mm", "Temperado 10 mm"], position: 3 }),
+    lin: await ins("custom_fields", { entity: "measurement", label: "Linha", type: "lista", options: ["Suprema", "Gold", "Linha 25"], position: 4 }),
+    pin: await ins("custom_fields", { entity: "measurement", label: "Pintura", type: "lista", options: ["Branco", "Preto fosco", "Anodizado natural"], position: 5 }),
+    peso: await ins("custom_fields", { entity: "measurement", label: "Peso (kg)", type: "numero", position: 6 }),
+  };
+  await ins("custom_fields", { entity: "production_order", label: "Tipo", type: "lista", options: ["Esquadria", "Carroceria", "Peça avulsa"], position: 1, onCard: true });
+  await ins("custom_fields", { entity: "production_order", label: "Pintura", type: "lista", options: ["Branco", "Preto fosco", "Anodizado natural"], position: 2, onCard: true });
+  await ins("custom_fields", { entity: "production_order", label: "Linha", type: "lista", options: ["Suprema", "Gold", "Linha 25"], position: 3, onCard: false });
+  const meas = async (number, work, address, status, due, rows) => {
+    const id = await ins("measurements", { number, partnerId: P.cl08, work, address, date: D(-4), dueDate: due, measurerId: PE.p4, status });
+    let pos = 0;
+    for (const [floor, loc, it, lar, alt, vid, pin, measured] of rows)
+      await ins("measurement_items", { measurementId: id, floor, location: loc, itemId: IT[it], qty: 1, measured, position: pos++,
+        custom: measured ? { [MF.lar]: String(lar), [MF.alt]: String(alt), [MF.vid]: vid, [MF.lin]: "Suprema", [MF.pin]: pin, [MF.peso]: String(Math.round((lar * alt) / 1e6 * 14 * 10) / 10) } : {} });
+  };
+  const torreB = [];
+  for (const fl of ["1º andar", "2º andar"]) {
+    for (const n of [1, 2, 3, 4]) torreB.push([fl, `Janela ${n}`, "it37", n === 4 ? 800 : 1500, n === 4 ? 600 : 1200, n === 4 ? "Fumê 6 mm" : "Incolor 6 mm", "Branco", fl === "1º andar" || n < 3]);
+    torreB.push([fl, "Porta da sala", "it38", 2400, 2100, "Temperado 10 mm", "Branco", fl === "1º andar"]);
+  }
+  await meas(1, "Residencial Ponta Negra · Torre B", "Av. Eng. Roberto Freire, Natal/RN", "MEDINDO", D(35), torreB);
+  await meas(2, "Clínica Bem Viver · reforma", "Rua Apodi, 410 · Natal/RN", "LIBERADA", D(20), [
+    ["Térreo", "Janela 1", "it37", 1200, 1000, "Laminado 8 mm", "Preto fosco", true], ["Térreo", "Janela 2", "it37", 1200, 1000, "Laminado 8 mm", "Preto fosco", true],
+    ["Térreo", "Janela 3", "it37", 1500, 1200, "Laminado 8 mm", "Preto fosco", true], ["Térreo", "Porta de entrada", "it38", 2400, 2100, "Temperado 10 mm", "Preto fosco", true]]);
+
   // ---------- compras: solicitações e cotação ----------
   const r1 = await ins("purchase_requests", { number: 1, requester: "Francisco Lima", department: "Produção", needDate: D(8), status: "APROVADA", notes: "Material para as OPs da próxima semana" });
   await ins("purchase_request_items", { requestId: r1, itemId: IT.it16, qty: 30 });
@@ -491,7 +522,7 @@ try {
   await ins("notifications", { userId: adminId, kind: "aviso", title: "Inventário do almoxarifado na sexta-feira", body: "Separar a equipe das 14h às 17h.", fromName: "Fernanda Rocha" });
 
   // ---------- numeração ----------
-  for (const [key, table] of [["sales_order", "sales_orders"], ["production_order", "production_orders"], ["purchase_order", "purchase_orders"], ["assembly", "assemblies"], ["purchase_request", "purchase_requests"], ["quotation", "quotations"]])
+  for (const [key, table] of [["sales_order", "sales_orders"], ["production_order", "production_orders"], ["purchase_order", "purchase_orders"], ["assembly", "assemblies"], ["purchase_request", "purchase_requests"], ["quotation", "quotations"], ["measurement", "measurements"]])
     await c.query(`insert into sequences (tenant_id, key, value) select $1, $2, coalesce(max(number), 0) from ${table}`, [tid, key]);
 
   await c.query("commit");

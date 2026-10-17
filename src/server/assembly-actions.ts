@@ -4,7 +4,7 @@ import { z } from "zod";
 import { act, NO_ACCESS } from "@/lib/access";
 import { audit } from "@/lib/audit";
 import * as E from "@/db/erp";
-import { ruleMsg, RuleError } from "./common";
+import { nextNumber, ruleMsg, RuleError } from "./common";
 import { autoStages } from "./assembly-common";
 import { isDate, today } from "@/lib/dates";
 import type { ActionState } from "@/lib/action";
@@ -124,4 +124,47 @@ export async function deletePartAction(id: string): Promise<ActionState> {
     if (p) await autoStages(tx, p.a);
   });
   return { ok: true, message: "Peça removida." };
+}
+
+// ------------------------------------------------------------------ romaneio (o que sai da fábrica para a montagem)
+const shipSchema = z.object({
+  assemblyId: z.string().max(64), date: z.string().refine(isDate, "Data inválida."), vehicle: z.string().max(80).optional().nullable(), driver: z.string().max(80).optional().nullable(),
+  notes: z.string().max(1000).optional().nullable(), lines: z.array(z.object({ partId: z.string().max(64), qty: z.number().positive().max(1e9) })).min(1, "Marque pelo menos uma peça.").max(3000),
+});
+export async function createShipmentAction(input: z.input<typeof shipSchema>): Promise<ActionState> {
+  const s = await act("producao");
+  if (!s) return NO_ACCESS;
+  const p = shipSchema.safeParse(input);
+  if (!p.success) return { error: p.error.issues[0]?.message ?? "Confira o romaneio." };
+  const d = p.data;
+  try {
+    const r = await s.tx(async (tx) => {
+      const [a] = await tx.select().from(E.assemblies).where(eq(E.assemblies.id, d.assemblyId)).limit(1).for("update");
+      if (!a) throw new RuleError("Montagem não encontrada.");
+      const parts = await tx.select({ p: E.assemblyParts, shipped: sql<string>`(select coalesce(sum(x.qty),0)::text from shipment_items x where x.part_id = "assembly_parts"."id")` })
+        .from(E.assemblyParts).where(eq(E.assemblyParts.assemblyId, a.id));
+      for (const l of d.lines) {
+        const pt = parts.find((x) => x.p.id === l.partId);
+        if (!pt) throw new RuleError("Peça não encontrada nesta montagem.");
+        const free = Number(pt.p.qty) - Number(pt.shipped);
+        if (l.qty > free + 1e-9) throw new RuleError(`Uma das peças só tem ${free.toLocaleString("pt-BR")} a enviar.`);
+      }
+      const number = await nextNumber(tx, s.tenant.id, "shipment", E.shipments, E.shipments.number);
+      const [sh] = await tx.insert(E.shipments).values({ tenantId: s.tenant.id, number, assemblyId: a.id, date: d.date, vehicle: d.vehicle?.trim() || null, driver: d.driver?.trim() || null, notes: d.notes?.trim() || null, userName: s.user.name })
+        .returning({ id: E.shipments.id });
+      await tx.insert(E.shipmentItems).values(d.lines.map((l) => ({ tenantId: s.tenant.id, shipmentId: sh.id, partId: l.partId, qty: String(l.qty) })));
+      return { id: sh.id, number };
+    });
+    return { ok: true, message: `Romaneio ${r.number} gerado.`, redirectTo: `/montagens/${d.assemblyId}/romaneio/${r.id}` };
+  } catch (err) {
+    return { error: ruleMsg(err) };
+  }
+}
+
+export async function deleteShipmentAction(id: string): Promise<ActionState> {
+  const s = await act("producao");
+  if (!s) return NO_ACCESS;
+  const r = await s.tx((tx) => tx.delete(E.shipments).where(eq(E.shipments.id, id)).returning({ a: E.shipments.assemblyId, n: E.shipments.number }));
+  if (!r.length) return { error: "Romaneio não encontrado." };
+  return { ok: true, message: `Romaneio ${r[0].n} excluído.`, redirectTo: `/montagens/${r[0].a}#romaneios` };
 }

@@ -14,8 +14,8 @@ const qf = (v: number) => v.toLocaleString("pt-BR", { maximumFractionDigits: 3 }
  * Tela de apontar (boa para celular e tablet): escolhe fábrica ou montagem, pesquisa a OP ou a montagem,
  * toca no que ficou pronto e informa a quantidade. Embaixo, os apontamentos de hoje, que dá para desfazer.
  */
-export function PointerScreen({ kinds, team, locations }: { kinds: Kind[]; team: [string, string][]; locations: [string, string][] }) {
-  const [kind, setKind] = useState<Kind>(kinds[0] ?? "FABRICA");
+export function PointerScreen({ kinds, team, locations, initial }: { kinds: Kind[]; team: [string, string][]; locations: [string, string][]; initial?: { kind: Kind; id: string } }) {
+  const [kind, setKind] = useState<Kind>(initial && kinds.includes(initial.kind) ? initial.kind : kinds[0] ?? "FABRICA");
   const [q, setQ] = useState("");
   const [targets, setTargets] = useState<Target[] | null>(null);
   const [target, setTarget] = useState<Target | null>(null);
@@ -27,6 +27,19 @@ export function PointerScreen({ kinds, team, locations }: { kinds: Kind[]; team:
 
   const loadMine = useCallback(async () => { const r = await myReportsAction(); if (!("error" in r)) setMine(r.rows); }, []);
   useEffect(() => { loadMine(); }, [loadMine]);
+  // aberto a partir da montagem, do romaneio ou da OP: já entra no que vai ser apontado
+  const ik = initial?.kind, iid = initial?.id;
+  useEffect(() => {
+    if (!ik || !iid || !kinds.includes(ik)) return;
+    let live = true;
+    reportLinesAction(ik, iid).then((r) => {
+      if (!live) return;
+      if ("error" in r) { toast(r.error, true); return; }
+      setTarget({ id: iid, title: r.title, sub: "", due: null, progress: 0 }); setLines(r.lines);
+    });
+    return () => { live = false; };
+    // só na abertura da tela
+  }, [ik, iid]);
   useEffect(() => {
     let live = true;
     setTargets(null);

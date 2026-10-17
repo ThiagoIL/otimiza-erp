@@ -15,8 +15,9 @@ import { POINTER_LABEL } from "@/lib/modules";
 type SP = Record<string, string | undefined>;
 
 /** Tela de apontar: usuário só de apontamento ou quem edita a Produção. */
-export async function PointerPage() {
+export async function PointerPage({ searchParams }: { searchParams: Promise<SP> }) {
   const s = await page(null);
+  const sp = await searchParams;
   const prod = s.access.mods.producao === "editar";
   if (!s.access.pointer && !prod) redirect(`/?erro=${encodeURIComponent("Seu perfil não aponta produção.")}`);
   const kinds = (["FABRICA", "MONTAGEM"] as const).filter((k) => prod || s.access.pointer === "ambos" || s.access.pointer === (k === "FABRICA" ? "fabrica" : "montagem"));
@@ -26,8 +27,9 @@ export async function PointerPage() {
   }));
   return (
     <>
-      <PageHead title="Apontar" sub={s.access.pointer ? `Apontamento de ${POINTER_LABEL[s.access.pointer].toLowerCase()}: registre o que ficou pronto.` : "Registre o que ficou pronto na fábrica (produto final, peça ou estrutura da OP) ou na montagem."} />
-      <PointerScreen kinds={[...kinds]} team={d.team.map((t) => [t.id, t.n])} locations={d.locs.map((l) => [l.id, `${l.c} · ${l.n}`])} />
+      <PageHead title="Apontar" sub={s.access.pointer ? `Apontamento de ${POINTER_LABEL[s.access.pointer].toLowerCase()}: registre o que ficou pronto.` : "Registre o que ficou pronto na fábrica (produto final, peça ou estrutura da OP) ou na montagem. As abas Finalizações e Horas trabalhadas mostram o que já foi apontado."} />
+      <PointerScreen kinds={[...kinds]} team={d.team.map((t) => [t.id, t.n])} locations={d.locs.map((l) => [l.id, `${l.c} · ${l.n}`])}
+        initial={sp.alvo && (sp.tipo === "FABRICA" || sp.tipo === "MONTAGEM") ? { kind: sp.tipo, id: sp.alvo } : undefined} />
     </>
   );
 }

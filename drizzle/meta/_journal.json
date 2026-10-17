@@ -85,6 +85,13 @@
       "when": 1792158863802,
       "tag": "0011_etapas_de_compra_dados",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1792240890506,
+      "tag": "0012_medicao_romaneio",
+      "breakpoints": true
     }
   ]
 }

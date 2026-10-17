@@ -55,6 +55,8 @@ export async function saveSimpleAction(key: string, _: ActionState, fd: FormData
   if (Object.keys(fields).length) return { error: "Confira os campos destacados.", fields, values: raw };
   if (key === "campos-pedido") values.entity = "sales_order";
   if (key === "campos-compra") values.entity = "purchase_order";
+  if (key === "campos-medicao") values.entity = "measurement";
+  if (key === "campos-op") values.entity = "production_order";
   const tbl = E.table;
   try {
     await s.tx(async (tx) => {

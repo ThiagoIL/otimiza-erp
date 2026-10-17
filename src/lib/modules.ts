@@ -33,7 +33,12 @@ export type NavModule = { id: string; label: string; icon: IconName; href?: stri
 
 export const TENANT_NAV: NavModule[] = [
   { id: "inicio", label: "Início", icon: "home", href: "/" },
-  { id: "dash", label: "Dashboards", icon: "chart", href: "/dashboards", perm: "dash" },
+  {
+    id: "dash", label: "Dashboards", icon: "chart", perm: "dash", items: [
+      { href: "/dashboards", label: "Indicadores" },
+      { href: "/dashboards/quadro", label: "Quadro da produção (TV)" },
+    ],
+  },
   { id: "comunicacao", label: "Comunicação e avisos", icon: "chat", href: "/comunicacao" },
   {
     id: "comercial", label: "Comercial", icon: "partner", perm: "comercial", items: [
@@ -52,18 +57,28 @@ export const TENANT_NAV: NavModule[] = [
   {
     id: "producao", label: "Produção", icon: "factory", perm: "producao", items: [
       { href: "/producao/pedidos", label: "Pedidos a produzir" },
+      { href: "/medicoes", label: "Medições" },
       { href: "/ops", label: "Ordens de produção" },
-      { href: "/apontar", label: "Apontar" },
-      { href: "/apontamentos", label: "Apontamentos", tabs: [
+      { href: "/apontar", label: "Apontamentos", tabs: [
+        { href: "/apontar", label: "Apontar" },
         { href: "/apontamentos", label: "Finalizações" },
         { href: "/apontamentos/horas", label: "Horas trabalhadas" },
       ] },
       { href: "/montagens", label: "Montagens" },
+      { href: "/producao/obras", label: "Acompanhamento de obras" },
+      { href: "/producao/relatorios", label: "Relatórios", tabs: [
+        { href: "/producao/relatorios", label: "Por funcionário" },
+        { href: "/producao/relatorios/servico", label: "Por serviço" },
+        { href: "/producao/relatorios/peso", label: "Por peso" },
+        { href: "/producao/relatorios/obra", label: "Por obra" },
+      ] },
       { href: "/producao/configuracoes", label: "Configurações", tabs: [
         { href: "/producao/configuracoes", label: "Etapas das OPs" },
         { href: "/producao/configuracoes/montagem", label: "Etapas de montagem" },
         { href: "/producao/configuracoes/centros", label: "Centros de trabalho" },
         { href: "/producao/configuracoes/equipe", label: "Equipe" },
+        { href: "/producao/configuracoes/campos-medicao", label: "Campos da medição" },
+        { href: "/producao/configuracoes/campos-op", label: "Campos da OP" },
       ] },
     ],
   },

@@ -1,11 +1,15 @@
 import Link from "next/link";
 import { Sel } from "@/components/SearchPicker";
 import { notFound } from "next/navigation";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { page } from "@/lib/access";
 import * as E from "@/db/erp";
-import { Empty, PageHead } from "@/components/ui";
-import { ActionButton, FilterBar, FilterTabs } from "@/components/client";
+import { BtnLink, Empty, PageHead, Panel } from "@/components/ui";
+import { ActionButton, ClickRow, FilterBar, FilterTabs } from "@/components/client";
+import { DeleteShipment, ShipLineApontar, ShipmentButton } from "@/components/ShipmentUI";
+import { PrintButton } from "@/components/PrintButton";
+import { companyHeader } from "@/server/common";
+import { customNum, weightFieldId } from "@/server/production-common";
 import { Icon } from "@/components/Icon";
 import { AssemblyHeaderEdit, AssemblyTree } from "@/components/AssemblyTree";
 import { NotifyButton } from "@/components/Comm";
@@ -82,7 +86,11 @@ export async function AssemblyPage({ params }: { params: Promise<{ id: string }>
     const parts = await tx.select({ p: E.assemblyParts, i: E.items }).from(E.assemblyParts).leftJoin(E.items, eq(E.items.id, E.assemblyParts.itemId)).where(eq(E.assemblyParts.assemblyId, id)).orderBy(asc(E.assemblyParts.createdAt));
     const stages = await tx.select().from(E.assemblyStages).orderBy(asc(E.assemblyStages.position));
     const team = await tx.select().from(E.teamMembers).where(eq(E.teamMembers.active, true)).orderBy(asc(E.teamMembers.name));
-    return { a, op, cli, locs, parts, stages, team };
+    const ships = await tx.select({ s: E.shipments, n: sql<number>`(select count(*)::int from shipment_items x where x.shipment_id = "shipments"."id")`, q: sql<string>`(select coalesce(sum(x.qty),0)::text from shipment_items x where x.shipment_id = "shipments"."id")` })
+      .from(E.shipments).where(eq(E.shipments.assemblyId, id)).orderBy(desc(E.shipments.number));
+    const shipped = await tx.select({ p: E.shipmentItems.partId, q: sql<string>`sum(${E.shipmentItems.qty})::text` }).from(E.shipmentItems).innerJoin(E.shipments, eq(E.shipments.id, E.shipmentItems.shipmentId))
+      .where(eq(E.shipments.assemblyId, id)).groupBy(E.shipmentItems.partId);
+    return { a, op, cli, locs, parts, stages, team, ships, shipped };
   });
   if (!d) notFound();
   const { a } = d;
@@ -91,12 +99,17 @@ export async function AssemblyPage({ params }: { params: Promise<{ id: string }>
   const late = a.dueDate && !a.completedAt && a.dueDate < today();
   const leaves = d.locs.filter((l) => !d.locs.some((c) => c.parentId === l.id)).length;
   const resp = d.team.find((t) => t.id === a.responsibleId);
+  const locName = (id: string) => { const l = d.locs.find((x) => x.id === id); const p = l?.parentId ? d.locs.find((x) => x.id === l.parentId) : null; return [p?.name, l?.name].filter(Boolean).join(" › "); };
+  const shipParts = d.parts.map(({ p, i }) => ({ id: p.id, where: locName(p.locationId), label: i?.name ?? p.description ?? "—", unit: i?.unit ?? "", qty: Number(p.qty), shipped: Number(d.shipped.find((x) => x.p === p.id)?.q ?? 0), done: Number(p.qtyDone) }));
+  const toShip = shipParts.reduce((x, p) => x + Math.max(0, p.qty - p.shipped), 0);
   return (
     <>
       <PageHead title={a.name} back={{ href: "/montagens", label: "Montagens" }}
         sub={<>Montagem {a.number} · <Link href={`/ops/${d.op.op.id}`}>OP {d.op.op.number}</Link> ({fmtQty(a.qty)} de {fmtQty(d.op.op.qty)} · {d.op.it}){d.cli ? ` · ${d.cli.tradeName || d.cli.name}` : ""}{a.address ? ` · ${a.address}` : ""}</>}
         actions={<>
           <NotifyButton link={`/montagens/${a.id}`} label={`Montagem ${a.number}`} suggest={`Conferir a montagem ${a.number} · ${a.name}`} />
+          {!a.completedAt && <BtnLink href={`/apontar?tipo=MONTAGEM&alvo=${a.id}`} icon="check">Apontar</BtnLink>}
+          {s.edit && <ShipmentButton assemblyId={a.id} parts={shipParts} />}
           {s.edit && <>
           <AssemblyHeaderEdit a={a} team={d.team.map((t) => [t.id, t.name])} />
           {a.completedAt ? <ActionButton className="btn" action={concludeAssemblyAction.bind(null, a.id, false)}>Reabrir</ActionButton>
@@ -114,6 +127,82 @@ export async function AssemblyPage({ params }: { params: Promise<{ id: string }>
         locs={d.locs.map((l) => ({ id: l.id, parentId: l.parentId, name: l.name, type: l.type, stageId: l.stageId, installerId: l.installerId, helperId: l.helperId }))}
         parts={d.parts.map(({ p, i }) => ({ id: p.id, locationId: p.locationId, itemId: p.itemId, label: i?.name ?? p.description ?? "—", code: i?.code ?? null, unit: i?.unit ?? "", qty: Number(p.qty), done: Number(p.qtyDone) }))} />
       {a.notes && <p className="muted" style={{ marginTop: 12, whiteSpace: "pre-wrap" }}>{a.notes}</p>}
+      <Panel id="romaneios" className="sec-panel" title="Romaneios" sub={toShip > 0 ? `${fmtQty(toShip)} peças ainda sem romaneio` : d.ships.length ? "todas as peças enviadas" : undefined}>
+        {d.ships.length ? <div className="tbl solo" style={{ border: 0, borderRadius: 0, maxHeight: "none" }}><table>
+          <thead><tr><th className="num">Nº</th><th>Saída</th><th>Veículo / motorista</th><th className="num">Peças</th><th>Gerado por</th><th /></tr></thead>
+          <tbody>{d.ships.map(({ s: sh, n, q }) => <ClickRow key={sh.id} href={`/montagens/${a.id}/romaneio/${sh.id}`}><td className="num"><b>{sh.number}</b></td><td className="code">{fmtD(sh.date)}</td>
+            <td>{[sh.vehicle, sh.driver].filter(Boolean).join(" · ") || "—"}</td><td className="num">{fmtQty(q)} <span className="muted">({n} {n === 1 ? "linha" : "linhas"})</span></td><td style={{ fontSize: 12.5 }}>{sh.userName}</td>
+            <td className="acts show"><span className="btn btn-ghost btn-sm"><Icon name="print" size={14} /> Abrir</span>{s.edit && <DeleteShipment id={sh.id} number={sh.number} />}</td></ClickRow>)}</tbody></table></div>
+          : <div className="pb muted" style={{ fontSize: 13 }}>Nenhum romaneio. Use “Gerar romaneio” quando as peças saírem da fábrica: dá para imprimir em PDF e conferir/apontar na tela.</div>}
+      </Panel>
+    </>
+  );
+}
+
+/** Romaneio: impresso (PDF pelo navegador) e, na tela, conferência com apontamento da montagem. */
+export async function ShipmentPage({ params }: { params: Promise<{ id: string; rid: string }> }) {
+  const s = await page("producao");
+  const { id, rid } = await params;
+  const d = await s.tx(async (tx) => {
+    const [sh] = await tx.select().from(E.shipments).where(and(eq(E.shipments.id, rid), eq(E.shipments.assemblyId, id))).limit(1);
+    if (!sh) return null;
+    const [a] = await tx.select().from(E.assemblies).where(eq(E.assemblies.id, id));
+    const [op] = await tx.select({ n: E.productionOrders.number, m: E.productionOrders.measurementId }).from(E.productionOrders).where(eq(E.productionOrders.id, a.productionOrderId));
+    const [cli] = a.partnerId ? await tx.select().from(E.partners).where(eq(E.partners.id, a.partnerId)) : [];
+    const lines = await tx.select({ x: E.shipmentItems, p: E.assemblyParts, i: E.items, mi: E.measurementItems }).from(E.shipmentItems).innerJoin(E.assemblyParts, eq(E.assemblyParts.id, E.shipmentItems.partId))
+      .leftJoin(E.items, eq(E.items.id, E.assemblyParts.itemId)).leftJoin(E.measurementItems, eq(E.measurementItems.id, E.assemblyParts.measurementItemId))
+      .where(eq(E.shipmentItems.shipmentId, rid));
+    const locs = await tx.select().from(E.assemblyLocations).where(eq(E.assemblyLocations.assemblyId, id)).orderBy(asc(E.assemblyLocations.position), asc(E.assemblyLocations.createdAt));
+    const mf = await tx.select().from(E.customFields).where(and(eq(E.customFields.entity, "measurement"), eq(E.customFields.active, true))).orderBy(asc(E.customFields.position));
+    const team = await tx.select({ id: E.teamMembers.id, n: E.teamMembers.name }).from(E.teamMembers).where(eq(E.teamMembers.active, true)).orderBy(asc(E.teamMembers.name));
+    const opW = await tx.select({ w: sql<string | null>`coalesce(${E.items.netWeight}, ${E.items.grossWeight})::text` }).from(E.productionOrders).innerJoin(E.items, eq(E.items.id, E.productionOrders.itemId)).where(eq(E.productionOrders.id, a.productionOrderId));
+    return { sh, a, op, cli, lines, locs, mf, team, wf: await weightFieldId(tx), itemW: customNum(opW[0]?.w), company: await companyHeader(tx, s.tenant.name) };
+  });
+  if (!d) notFound();
+  const { sh, a } = d;
+  const order = new Map(d.locs.map((l, k) => [l.id, k]));
+  const locName = (lid: string) => { const l = d.locs.find((x) => x.id === lid); const p = l?.parentId ? d.locs.find((x) => x.id === l.parentId) : null; return [p?.name, l?.name].filter(Boolean).join(" › "); };
+  const rows = d.lines.map((r) => ({ ...r, where: locName(r.p.locationId), ord: order.get(r.p.locationId) ?? 0 })).sort((x, y) => x.ord - y.ord);
+  // medidas que vão no romaneio: os campos da medição, menos o peso (que tem coluna própria)
+  const cols = d.mf.filter((f) => f.id !== d.wf);
+  const wOf = (r: (typeof rows)[number]) => (d.wf && r.mi ? customNum(r.mi.custom[d.wf]) : 0) || d.itemW;
+  const totQ = rows.reduce((x, r) => x + Number(r.x.qty), 0);
+  const totW = rows.reduce((x, r) => x + Number(r.x.qty) * wOf(r), 0);
+  const montadas = rows.filter((r) => Number(r.p.qtyDone) >= Number(r.p.qty) - 1e-9).length;
+  return (
+    <>
+      <Link className="back no-print" href={`/montagens/${a.id}#romaneios`}>Montagem {a.number}</Link>
+      <div className="ph no-print"><div><h1>Romaneio {sh.number}</h1><p>Imprima ou salve em PDF para acompanhar a carga. Na tela, aponte cada peça montada direto na linha ({montadas} de {rows.length} linhas montadas).</p></div>
+        <div className="acts">{!a.completedAt && <BtnLink href={`/apontar?tipo=MONTAGEM&alvo=${a.id}`} icon="check">Abrir no Apontar</BtnLink>}<PrintButton /></div></div>
+      <div className="paper">
+        <div className="rep">
+          <header className="rep-h">
+            <div className="rep-co">{d.company.logo && <img className="rep-logo" src={d.company.logo} alt="" />}<div><div className="rep-brand">{d.company.name}</div><small>{d.company.line} · gerado em {fmtD(today())}</small></div></div>
+            <div className="rep-t"><h2>Romaneio nº {sh.number}</h2><span>Montagem {a.number} · OP {d.op.n}</span></div>
+          </header>
+          <section className="rep-grid">
+            <div><h4>Obra / cliente</h4><b>{a.name}</b><br />{d.cli ? d.cli.tradeName || d.cli.name : ""}<br />{a.address}</div>
+            <div><h4>Transporte</h4>Saída: <b>{fmtD(sh.date)}</b><br />Veículo: {sh.vehicle || "—"}<br />Motorista: {sh.driver || "—"}</div>
+            <div><h4>Carga</h4>{fmtQty(totQ)} peças em {rows.length} {rows.length === 1 ? "linha" : "linhas"}<br />{totW > 0 && <>Peso total: <b>{totW.toLocaleString("pt-BR", { maximumFractionDigits: 1 })} kg</b></>}</div>
+          </section>
+          <table className="rep-t2">
+            <thead><tr><th>Local</th><th>Peça</th>{cols.map((f) => <th key={f.id}>{f.label}</th>)}<th className="num">Qtd.</th>{totW > 0 && <th className="num">Peso (kg)</th>}<th className="print-only">Conferido</th><th className="no-print">Montagem</th></tr></thead>
+            <tbody>{rows.map((r) => {
+              const left = Number(r.p.qty) - Number(r.p.qtyDone);
+              return (
+                <tr key={r.x.id}><td>{r.where}</td><td>{r.i?.name ?? r.p.description ?? "—"}{r.mi?.description && r.i && <div style={{ fontSize: 11.5, color: "#6B7885" }}>{r.mi.description}</div>}</td>
+                  {cols.map((f) => <td key={f.id}>{r.mi?.custom[f.id] ?? ""}</td>)}<td className="num">{fmtQty(r.x.qty)}</td>{totW > 0 && <td className="num">{(Number(r.x.qty) * wOf(r)).toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</td>}
+                  <td className="print-only">☐</td>
+                  <td className="no-print">{a.completedAt ? <span className="badge ok">Concluída</span> : <ShipLineApontar assemblyId={a.id} partId={r.p.id} left={left} unit={r.i?.unit ?? ""} label={r.i?.name ?? r.p.description ?? "Peça"} team={d.team.map((t) => [t.id, t.n])} />}
+                    {Number(r.p.qtyDone) > 0 && left > 1e-9 && <div className="t-sub">{fmtQty(r.p.qtyDone)} de {fmtQty(r.p.qty)} montadas</div>}</td></tr>
+              );
+            })}</tbody>
+            <tfoot><tr><td colSpan={2 + cols.length}>Total</td><td className="num">{fmtQty(totQ)}</td>{totW > 0 && <td className="num">{totW.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}</td>}<td className="print-only" /><td className="no-print" /></tr></tfoot>
+          </table>
+          {sh.notes && <p style={{ marginTop: 12 }}><b>Observação:</b> {sh.notes}</p>}
+          <section className="rep-sign rep-sign3"><div>Expedição (fábrica)</div><div>Motorista</div><div>Recebido na obra</div></section>
+        </div>
+      </div>
     </>
   );
 }

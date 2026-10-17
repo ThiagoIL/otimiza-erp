@@ -6,35 +6,10 @@ import { audit } from "@/lib/audit";
 import * as E from "@/db/erp";
 import { avgCosts, balances, balanceOf, insertMovements, nextNumber, ruleMsg, RuleError } from "./common";
 import { opCosts } from "./production-costs";
+import { cleanCustom, copyBom, firstStage, syncOrderProduction } from "./production-common";
 import { isDate, today } from "@/lib/dates";
 import type { ActionState } from "@/lib/action";
 import type { Tx } from "@/lib/db";
-
-const r4 = (v: number) => Math.round(v * 10000) / 10000;
-
-/** Copia a estrutura do item para a OP, já multiplicada pela quantidade e com a perda. */
-async function copyBom(tx: Tx, tenantId: string, opId: string, itemId: string, qty: number) {
-  const bom = await tx.select().from(E.itemBom).where(eq(E.itemBom.itemId, itemId)).orderBy(asc(E.itemBom.position));
-  if (bom.length) await tx.insert(E.productionOrderComponents).values(bom.map((b, i) => ({
-    tenantId, productionOrderId: opId, itemId: b.componentId, qtyRequired: String(r4(Number(b.qty) * qty * (1 + Number(b.lossPct) / 100))), supply: b.supply, fromBom: true, position: i,
-  })));
-  return bom.length;
-}
-
-async function firstStage(tx: Tx) {
-  const [st] = await tx.select().from(E.productionStages).where(ne(E.productionStages.kind, "cancelada")).orderBy(sql`case when ${E.productionStages.kind} = 'aberta' then 0 else 1 end`, asc(E.productionStages.position)).limit(1);
-  if (!st) throw new RuleError("Cadastre as etapas das OPs em Produção › Configurações.");
-  return st;
-}
-
-/** Atualiza a situação de produção do pedido de venda conforme as OPs dele. */
-async function syncOrderProduction(tx: Tx, salesOrderId: string | null) {
-  if (!salesOrderId) return;
-  const ops = await tx.select({ kind: E.productionStages.kind }).from(E.productionOrders).innerJoin(E.productionStages, eq(E.productionStages.id, E.productionOrders.stageId)).where(eq(E.productionOrders.salesOrderId, salesOrderId));
-  const live = ops.filter((o) => o.kind !== "cancelada");
-  const st = !live.length ? "PENDENTE" : live.every((o) => o.kind === "finalizada") ? "PRODUZIDO" : "EM_PRODUCAO";
-  await tx.update(E.salesOrders).set({ productionStatus: st }).where(and(eq(E.salesOrders.id, salesOrderId), ne(E.salesOrders.status, "CANCELADO")));
-}
 
 // ------------------------------------------------------------------------------------
 // Fila de pedidos aprovados
@@ -93,6 +68,7 @@ const opSchema = z.object({
   salesOrderId: z.string().max(64).optional().nullable(), partnerId: z.string().max(64).optional().nullable(), stageId: z.string().max(64).optional().nullable(),
   workCenterId: z.string().max(64).optional().nullable(), responsibleId: z.string().max(64).optional().nullable(), priority: z.enum(["Baixa", "Normal", "Alta", "Urgente"]).default("Normal"),
   startDate: z.string().optional().nullable(), needDate: z.string().optional().nullable(), notes: z.string().max(4000).optional().nullable(),
+  work: z.string().max(200).optional().nullable(), custom: z.record(z.string().max(64), z.string().max(500)).optional(),
 });
 export async function saveOpAction(input: z.input<typeof opSchema>): Promise<ActionState & { id?: string }> {
   const s = await act("producao");
@@ -106,7 +82,8 @@ export async function saveOpAction(input: z.input<typeof opSchema>): Promise<Act
   try {
     await s.tx(async (tx) => {
       const values = { itemId: d.itemId, qty: String(d.qty), salesOrderId: d.salesOrderId || null, partnerId: d.partnerId || null, workCenterId: d.workCenterId || null,
-        responsibleId: d.responsibleId || null, priority: d.priority, startDate: dt(d.startDate), needDate: dt(d.needDate), notes: d.notes?.trim() || null };
+        responsibleId: d.responsibleId || null, priority: d.priority, startDate: dt(d.startDate), needDate: dt(d.needDate), notes: d.notes?.trim() || null,
+        work: d.work?.trim() || null, ...(d.custom ? { custom: await cleanCustom(tx, "production_order", d.custom, true) } : {}) };
       if (values.salesOrderId && !values.partnerId) {
         const [so] = await tx.select({ p: E.salesOrders.partnerId }).from(E.salesOrders).where(eq(E.salesOrders.id, values.salesOrderId));
         values.partnerId = so?.p ?? null;
@@ -153,6 +130,8 @@ export async function moveOpAction(id: string, stageId: string): Promise<ActionS
       const [st] = await tx.select().from(E.productionStages).where(eq(E.productionStages.id, stageId)).limit(1);
       if (!op || !st) throw new RuleError("OP ou etapa não encontrada.");
       await tx.update(E.productionOrders).set({ stageId, completedAt: st.kind === "finalizada" ? (op.completedAt ?? today()) : null }).where(eq(E.productionOrders.id, id));
+      // OP cancelada: os locais da medição voltam a ficar livres para gerar outra OP
+      if (st.kind === "cancelada") await tx.update(E.measurementItems).set({ productionOrderId: null }).where(eq(E.measurementItems.productionOrderId, id));
       await syncOrderProduction(tx, op.salesOrderId);
       const left = Number(op.qty) - Number(op.qtyProduced);
       return st.kind === "finalizada" && left > 0
@@ -175,6 +154,7 @@ export async function deleteOpAction(id: string): Promise<ActionState> {
       const [{ m }] = await tx.select({ m: sql<number>`count(*)::int` }).from(E.stockMovements).where(eq(E.stockMovements.productionOrderId, id));
       const [{ a }] = await tx.select({ a: sql<number>`count(*)::int` }).from(E.assemblies).where(eq(E.assemblies.productionOrderId, id));
       if (m || a) throw new RuleError("Esta OP já tem retiradas de estoque, produção apontada ou montagem. Mova-a para a etapa de cancelamento em vez de excluir.");
+      await tx.update(E.measurementItems).set({ productionOrderId: null }).where(eq(E.measurementItems.productionOrderId, id));
       await tx.delete(E.productionOrders).where(eq(E.productionOrders.id, id));
       await syncOrderProduction(tx, op.salesOrderId);
     });
@@ -322,6 +302,44 @@ export async function createAssemblyFromOpAction(input: z.input<typeof asmSchema
       const number = await nextNumber(tx, s.tenant.id, "assembly", E.assemblies, E.assemblies.number);
       const [a] = await tx.insert(E.assemblies).values({ tenantId: s.tenant.id, number, name: d.name, productionOrderId: op.id, qty: String(d.qty), partnerId: op.partnerId, address: d.address?.trim() || null,
         responsibleId: d.responsibleId || null, startDate: today(), dueDate: d.dueDate && isDate(d.dueDate) ? d.dueDate : op.needDate }).returning({ id: E.assemblies.id });
+      // com medição: a montagem nasce com a árvore andar → local e as peças medidas (o que ainda não foi enviado)
+      const lines = op.measurementId ? await tx.select().from(E.measurementItems).where(eq(E.measurementItems.productionOrderId, op.id)).orderBy(asc(E.measurementItems.position)) : [];
+      const used = lines.length ? await tx.select({ mi: E.assemblyParts.measurementItemId, q: sql<string>`sum(${E.assemblyParts.qty})::text` }).from(E.assemblyParts)
+        .where(inArray(E.assemblyParts.measurementItemId, lines.map((l) => l.id))).groupBy(E.assemblyParts.measurementItemId) : [];
+      let rest = d.qty;
+      const plan: { l: (typeof lines)[number]; q: number }[] = [];
+      for (const l of lines) {
+        const free = Number(l.qty) - Number(used.find((u) => u.mi === l.id)?.q ?? 0);
+        const q = Math.min(free, rest);
+        if (q > 1e-9) { plan.push({ l, q }); rest -= q; }
+        if (rest <= 1e-9) break;
+      }
+      if (plan.length) {
+        const floors = new Map<string, string>();
+        let pos = 0;
+        for (const { l } of plan) {
+          const f = l.floor?.trim();
+          if (f && !floors.has(f)) {
+            const [fl] = await tx.insert(E.assemblyLocations).values({ tenantId: s.tenant.id, assemblyId: a.id, name: f, type: "Andar", stageId: st?.id ?? null, position: pos++ }).returning({ id: E.assemblyLocations.id });
+            floors.set(f, fl.id);
+          }
+        }
+        const locs = new Map<string, string>();
+        for (const { l, q } of plan) {
+          const key = `${l.floor ?? ""}|${l.location}`;
+          let lid = locs.get(key);
+          if (!lid) {
+            const [lc] = await tx.insert(E.assemblyLocations).values({ tenantId: s.tenant.id, assemblyId: a.id, parentId: l.floor?.trim() ? floors.get(l.floor.trim())! : null, name: l.location, type: "Ambiente", stageId: st?.id ?? null, position: pos++ }).returning({ id: E.assemblyLocations.id });
+            lid = lc.id; locs.set(key, lid);
+          }
+          await tx.insert(E.assemblyParts).values({ tenantId: s.tenant.id, assemblyId: a.id, locationId: lid, itemId: it.id, description: l.description, qty: String(q), measurementItemId: l.id });
+        }
+        if (rest > 1e-9) {
+          const [lc] = await tx.insert(E.assemblyLocations).values({ tenantId: s.tenant.id, assemblyId: a.id, name: `Outros itens da OP ${op.number}`, type: "Outro", stageId: st?.id ?? null, position: pos++ }).returning({ id: E.assemblyLocations.id });
+          await tx.insert(E.assemblyParts).values({ tenantId: s.tenant.id, assemblyId: a.id, locationId: lc.id, itemId: it.id, qty: String(rest) });
+        }
+        return a.id;
+      }
       const [loc] = await tx.insert(E.assemblyLocations).values({ tenantId: s.tenant.id, assemblyId: a.id, name: `Itens da OP ${op.number}`, type: "Outro", stageId: st?.id ?? null }).returning({ id: E.assemblyLocations.id });
       await tx.insert(E.assemblyParts).values({ tenantId: s.tenant.id, assemblyId: a.id, locationId: loc.id, itemId: it.id, qty: String(d.qty) });
       return a.id;
@@ -384,4 +402,89 @@ export async function deleteTimeEntryAction(id: string): Promise<ActionState> {
   if (!s) return NO_ACCESS;
   await s.tx((tx) => tx.delete(E.timeEntries).where(eq(E.timeEntries.id, id)));
   return { ok: true, message: "Apontamento excluído." };
+}
+
+// ------------------------------------------------------------------------------------
+// Importar OPs de planilha (Excel ou CSV)
+// ------------------------------------------------------------------------------------
+const impSchema = z.object({ rows: z.array(z.record(z.string().max(80), z.string().max(400))).min(1, "A planilha está vazia.").max(2000) });
+const pickC = (r: Record<string, string>, ...keys: string[]) => { for (const k of keys) { const v = r[k]; if (v != null && String(v).trim() !== "") return String(v).trim(); } return ""; };
+const nlC = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+const numC = (v: string) => { const t = v.replace(/\s/g, ""); return Number(t.includes(",") ? t.replace(/\./g, "").replace(",", ".") : t); };
+const dateC = (v: string) => {
+  if (!v) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.slice(0, 10);
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/.exec(v);
+  if (m) return `${m[3].length === 2 ? "20" + m[3] : m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  const n = Number(v);
+  if (Number.isFinite(n) && n > 20000 && n < 80000) return new Date(Date.UTC(1899, 11, 30) + Math.round(n) * 86400000).toISOString().slice(0, 10);
+  return "x";
+};
+/**
+ * Cria OPs a partir de uma planilha. Colunas: Item (código) e Quantidade; opcionais: Necessidade, Prioridade,
+ * Pedido (nº do pedido de venda), Obra, Observação e uma coluna para cada campo da OP (ex.: Tipo, Pintura).
+ */
+export async function importOpsAction(input: z.input<typeof impSchema>): Promise<ActionState> {
+  const s = await act("producao");
+  if (!s) return NO_ACCESS;
+  const p = impSchema.safeParse(input);
+  if (!p.success) return { error: p.error.issues[0]?.message ?? "Confira a planilha." };
+  const rows = p.data.rows;
+  try {
+    const nums = await s.tx(async (tx) => {
+      const fields = await tx.select().from(E.customFields).where(and(eq(E.customFields.entity, "production_order"), eq(E.customFields.active, true)));
+      const codes = [...new Set(rows.map((r) => pickC(r, "item", "codigo", "codigo do item", "cod", "produto")).filter(Boolean))];
+      const items = codes.length ? await tx.select({ id: E.items.id, code: E.items.code }).from(E.items).where(inArray(E.items.code, codes)) : [];
+      const byCode = new Map(items.map((i) => [i.code.toLowerCase(), i.id]));
+      const pvs = [...new Set(rows.map((r) => Number(pickC(r, "pedido", "pedido de venda", "pv"))).filter((n) => n > 0))];
+      const orders = pvs.length ? await tx.select().from(E.salesOrders).where(inArray(E.salesOrders.number, pvs)) : [];
+      const prios = ["Baixa", "Normal", "Alta", "Urgente"];
+      const errs: string[] = [];
+      const plan: { itemId: string; qty: number; needDate: string | null; priority: string; so: (typeof orders)[number] | undefined; work: string | null; notes: string | null; custom: Record<string, string> }[] = [];
+      rows.forEach((r, k) => {
+        const line = k + 2;
+        const code = pickC(r, "item", "codigo", "codigo do item", "cod", "produto");
+        const qs = pickC(r, "quantidade", "qtd", "qtde", "quant");
+        if (!code && !qs) return;
+        const itemId = byCode.get(code.toLowerCase());
+        if (!code) errs.push(`linha ${line}: falta o código do item`); else if (!itemId) errs.push(`linha ${line}: item ${code} não cadastrado`);
+        const qty = numC(qs);
+        if (!(qty > 0)) errs.push(`linha ${line}: quantidade inválida`);
+        const need = dateC(pickC(r, "necessidade", "data de necessidade", "entrega", "prazo"));
+        if (need === "x") errs.push(`linha ${line}: data inválida`);
+        const pr = pickC(r, "prioridade");
+        const priority = pr ? prios.find((x) => nlC(x) === nlC(pr)) : "Normal";
+        if (!priority) errs.push(`linha ${line}: prioridade deve ser Baixa, Normal, Alta ou Urgente`);
+        const pvN = Number(pickC(r, "pedido", "pedido de venda", "pv"));
+        const so = pvN ? orders.find((o) => o.number === pvN) : undefined;
+        if (pvN && !so) errs.push(`linha ${line}: pedido ${pvN} não encontrado`);
+        const custom: Record<string, string> = {};
+        for (const f of fields) {
+          const v = r[nlC(f.label)];
+          if (v == null || String(v).trim() === "") { if (f.required) errs.push(`linha ${line}: preencha ${f.label}`); continue; }
+          let val = String(v).trim();
+          if (f.type === "lista" && f.options.length) { const hit = f.options.find((o) => nlC(o) === nlC(val)); if (!hit) { errs.push(`linha ${line}: “${val}” não é opção de ${f.label}`); continue; } val = hit; }
+          custom[f.id] = val;
+        }
+        if (itemId && qty > 0 && priority && need !== "x") plan.push({ itemId, qty, needDate: need, priority, so, work: pickC(r, "obra", "local", "local de entrega") || so?.deliveryPlace || null, notes: pickC(r, "observacao", "obs") || null, custom });
+      });
+      if (errs.length) throw new RuleError(`Nada foi importado. Corrija a planilha: ${errs.slice(0, 8).join("; ")}${errs.length > 8 ? ` e mais ${errs.length - 8}` : ""}.`);
+      if (!plan.length) throw new RuleError("Nenhuma linha com item e quantidade na planilha.");
+      const st = await firstStage(tx);
+      const out: number[] = [];
+      for (const l of plan) {
+        const number = await nextNumber(tx, s.tenant.id, "production_order", E.productionOrders, E.productionOrders.number);
+        const [op] = await tx.insert(E.productionOrders).values({ tenantId: s.tenant.id, number, itemId: l.itemId, qty: String(l.qty), salesOrderId: l.so?.id ?? null, partnerId: l.so?.partnerId ?? null,
+          stageId: st.id, priority: l.priority, startDate: today(), needDate: l.needDate ?? l.so?.deliveryDate ?? null, notes: l.notes, work: l.work, custom: l.custom }).returning({ id: E.productionOrders.id });
+        await copyBom(tx, s.tenant.id, op.id, l.itemId, l.qty);
+        out.push(number);
+      }
+      for (const id of new Set(plan.map((l) => l.so?.id).filter(Boolean) as string[])) await syncOrderProduction(tx, id);
+      return out;
+    });
+    await audit({ action: "op.importada", tenantId: s.tenant.id, userId: s.user.id, userEmail: s.user.email, entity: "op", entityId: String(nums[0] ?? ""), data: { ops: nums } });
+    return { ok: true, message: `${nums.length} ${nums.length === 1 ? "OP importada" : "OPs importadas"} (${nums[0]}${nums.length > 1 ? ` a ${nums[nums.length - 1]}` : ""}).` };
+  } catch (err) {
+    return { error: ruleMsg(err) };
+  }
 }

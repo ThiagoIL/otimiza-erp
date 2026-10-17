@@ -129,6 +129,34 @@ abrir `http://demo.localhost:3000`.
   **cliente** (`client_id`) e **obra** (`work`, com `PlaceField`) para filtrar, e **campos personalizados**
   (`custom_fields.entity = 'purchase_order'`, `on_card` = aparece como etiqueta no cartão).
 
+- **Medição, romaneio e acompanhamento** (out/2026, migração 0012):
+  - **Medições** (`measurements` + `measurement_items`, Produção › Medições, `/medicoes`): antes da fabricação, cada obra é
+    medida local por local (andar + local: Janela 1, Porta da sala…), com item, quantidade e os **campos da medição**
+    configurados pelo administrador (`custom_fields.entity = 'measurement'`, Produção › Configurações › Campos da medição:
+    Largura, Altura, Vidro, Peso, Tipo, Linha…; “obrigatório” vale para marcar o local como medido). Situações: Em medição →
+    Liberada (todos os locais medidos) → Em produção (já tem OP; derivado). Grade com “Vários locais” (andares × Janela 1..N)
+    e **importação de planilha** (.xlsx ou .csv, lida no navegador por `src/lib/sheet.ts`, sem biblioteca; colunas pelo nome).
+  - **Gerar OPs** da medição liberada (`generateOpsFromMeasurementAction`): uma OP por item + combinação dos campos da OP com o
+    mesmo nome de um campo da medição (ex.: Pintura). A OP guarda `measurement_id`, `work` (obra) e `custom`; cada local fica com
+    `production_order_id`. OP cancelada ou excluída libera os locais.
+  - **Montagem a partir da OP com medição** cria a árvore andar → local com as peças medidas (`assembly_parts.measurement_item_id`).
+  - **Romaneio** (`shipments` + `shipment_items`, botão “Gerar romaneio” na montagem): página `/montagens/[id]/romaneio/[rid]`
+    para imprimir/PDF (medidas, peso, assinaturas) e, na tela, botão “Apontar” por linha (mesmo `saveReportAction` da montagem).
+  - **Peso**: o campo da medição cujo nome começa com “Peso” (kg por unidade); sem medição, peso líquido/bruto do item
+    (`opUnitWeights` em `src/server/production-common.ts`). Peças intermediárias não somam peso.
+  - **Campos da OP** (`custom_fields.entity = 'production_order'`, Produção › Configurações › Campos da OP) e **obra** na OP.
+    **Importar OPs por planilha** em Ordens de produção (`importOpsAction`: Item, Quantidade, Necessidade, Prioridade, Pedido, Obra…).
+  - **Quadro das OPs com “Exibir no cartão”**: cada pessoa escolhe o que aparece (prioridade, obra, cliente, centro, campos da OP
+    como Tipo e Pintura…), guardado no navegador (`useCardFields`). **Modo TV** em Dashboards › Quadro da produção (TV)
+    (`/dashboards/quadro`): tela cheia esconde o menu (classe `tv-mode`), atualiza a cada minuto, não deixa arrastar.
+  - **Acompanhamento de obras** (`/producao/obras`): % de medição, produção e montagem por obra (medição, pedido ou obra da OP).
+  - **Relatórios da produção** (`/producao/relatorios`, abas por funcionário, serviço, peso e obra), com período e impressão.
+  - **Apontar e Apontamentos juntos**: item de menu “Apontamentos” com as abas Apontar, Finalizações e Horas trabalhadas.
+    `/apontar?tipo=MONTAGEM|FABRICA&alvo=<id>` abre direto na montagem/OP (botões “Apontar” na montagem, na OP e no romaneio).
+  - Helpers compartilhados da produção (`copyBom`, `firstStage`, `syncOrderProduction`, campos personalizados) saíram de
+    `production-actions.ts` para `src/server/production-common.ts` (server-only).
+
 ## Próximos passos sugeridos
 - Emissão real de NF-e (provedor) quando for necessário.
-- Importação de cadastros por planilha.
+- Importação de cadastros por planilha (o leitor `src/lib/sheet.ts` já existe; usado em medições e OPs).
+- Medição pelo celular (tela simples só para o medidor marcar locais e digitar medidas).

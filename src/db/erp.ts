@@ -664,8 +664,14 @@ export const productionOrders = pgTable("production_orders", {
   needDate: day("need_date"),
   completedAt: day("completed_at"),
   notes: text("notes"),
+  /** medição (obra) que originou a OP */
+  measurementId: text("measurement_id"),
+  /** obra / local, para o quadro e o acompanhamento */
+  work: text("work"),
+  custom: jsonb("custom").$type<Record<string, string>>().notNull().default({}),
 }, (t) => [
   tid("production_orders_tid_uq", t),
+  fk("production_orders_measurement_fk", t.tenantId, t.measurementId, () => measurements),
   uniqueIndex("production_orders_number_uq").on(t.tenantId, t.number),
   fk("production_orders_stage_fk", t.tenantId, t.stageId, () => productionStages),
   fk("production_orders_order_fk", t.tenantId, t.salesOrderId, () => salesOrders),
@@ -789,10 +795,90 @@ export const assemblyParts = pgTable("assembly_parts", {
   description: text("description"),
   qty: qty("qty").notNull().default("1"),
   qtyDone: qty("qty_done").notNull().default("0"),
+  /** linha da medição que originou a peça (andar, local, medidas) */
+  measurementItemId: text("measurement_item_id"),
 }, (t) => [
   tid("assembly_parts_tid_uq", t),
+  fk("assembly_parts_mi_fk", t.tenantId, t.measurementItemId, () => measurementItems),
   fk("assembly_parts_asm_fk", t.tenantId, t.assemblyId, () => assemblies, true),
   fk("assembly_parts_loc_fk", t.tenantId, t.locationId, () => assemblyLocations, true), itemFk("assembly_parts_item_fk", t.tenantId, t.itemId),
+]);
+
+// =====================================================================================
+// Medição: o que medir em cada obra, andar e local (Janela 1, 2…), antes da fabricação.
+// Os campos medidos (dimensão, vidro, peso, tipo, linha…) são campos personalizados
+// (custom_fields.entity = 'measurement'). A medição gera as OPs e a estrutura da montagem.
+// =====================================================================================
+export const measurements = pgTable("measurements", {
+  ...base(),
+  number: integer("number").notNull(),
+  partnerId: text("partner_id"),
+  salesOrderId: text("sales_order_id"),
+  /** nome da obra */
+  work: text("work").notNull(),
+  address: text("address"),
+  date: day("date").notNull(),
+  dueDate: day("due_date"),
+  measurerId: text("measurer_id"),
+  /** MEDINDO | LIBERADA (pronta para a produção) | CANCELADA */
+  status: text("status").notNull().default("MEDINDO"),
+  notes: text("notes"),
+}, (t) => [
+  tid("measurements_tid_uq", t),
+  uniqueIndex("measurements_number_uq").on(t.tenantId, t.number),
+  fk("measurements_partner_fk", t.tenantId, t.partnerId, () => partners),
+  fk("measurements_order_fk", t.tenantId, t.salesOrderId, () => salesOrders),
+  fk("measurements_measurer_fk", t.tenantId, t.measurerId, () => teamMembers),
+]);
+
+export const measurementItems = pgTable("measurement_items", {
+  ...base(),
+  measurementId: text("measurement_id").notNull(),
+  /** andar / pavimento / bloco */
+  floor: text("floor"),
+  /** local: Janela 1, Porta da sala… */
+  location: text("location").notNull(),
+  itemId: text("item_id"),
+  description: text("description"),
+  qty: qty("qty").notNull().default("1"),
+  custom: jsonb("custom").$type<Record<string, string>>().notNull().default({}),
+  measured: boolean("measured").notNull().default(false),
+  productionOrderId: text("production_order_id"),
+  position: integer("position").notNull().default(0),
+  notes: text("notes"),
+}, (t) => [
+  tid("measurement_items_tid_uq", t),
+  index("measurement_items_m_idx").on(t.tenantId, t.measurementId),
+  fk("measurement_items_m_fk", t.tenantId, t.measurementId, () => measurements, true),
+  fk("measurement_items_op_fk", t.tenantId, t.productionOrderId, () => productionOrders),
+  itemFk("measurement_items_item_fk", t.tenantId, t.itemId),
+]);
+
+/** Romaneio: o que sai da fábrica para a montagem (impresso em PDF e conferido na tela). */
+export const shipments = pgTable("shipments", {
+  ...base(),
+  number: integer("number").notNull(),
+  assemblyId: text("assembly_id").notNull(),
+  date: day("date").notNull(),
+  vehicle: text("vehicle"),
+  driver: text("driver"),
+  notes: text("notes"),
+  userName: text("user_name"),
+}, (t) => [
+  tid("shipments_tid_uq", t),
+  uniqueIndex("shipments_number_uq").on(t.tenantId, t.number),
+  fk("shipments_asm_fk", t.tenantId, t.assemblyId, () => assemblies, true),
+]);
+
+export const shipmentItems = pgTable("shipment_items", {
+  ...base(),
+  shipmentId: text("shipment_id").notNull(),
+  partId: text("part_id").notNull(),
+  qty: qty("qty").notNull(),
+}, (t) => [
+  tid("shipment_items_tid_uq", t),
+  fk("shipment_items_s_fk", t.tenantId, t.shipmentId, () => shipments, true),
+  fk("shipment_items_p_fk", t.tenantId, t.partId, () => assemblyParts, true),
 ]);
 
 // =====================================================================================
@@ -1029,6 +1115,7 @@ export const TENANT_TABLES = [
   "assembly_locations", "assembly_parts", "purchase_requests", "purchase_request_items", "quotations", "quotation_items",
   "quotation_suppliers", "quotation_prices", "purchase_orders", "purchase_order_items", "fin_titles", "bank_entries", "sequences",
   "sales_stages", "purchase_stages", "delivery_places", "production_reports", "messages", "chat_reads", "tasks", "notifications",
+  "measurements", "measurement_items", "shipments", "shipment_items",
 ] as const;
 
 export type Item = typeof items.$inferSelect;

@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "./Icon";
 import { ActionButton, Modal, useRun } from "./client";
@@ -8,10 +8,11 @@ import { PickField, PlaceField, Sel } from "./SearchPicker";
 import { searchPartnersAction } from "@/server/search-actions";
 import { toast } from "./Toast";
 import {
-  addComponentsAction, createAssemblyFromOpAction, generateOpsAction, moveOpAction, noProductionAction, removeComponentAction, reportOutputAction,
+  addComponentsAction, createAssemblyFromOpAction, generateOpsAction, importOpsAction, moveOpAction, noProductionAction, removeComponentAction, reportOutputAction,
   requisitionAction, saveOpAction, setComponentDoneAction, setComponentSupplyAction,
 } from "@/server/production-actions";
 import { PRIORITIES } from "@/lib/consts";
+import { CustomFieldsForm, ImportSheet, type CField } from "./MeasurementUI";
 import { fmtD, today } from "@/lib/dates";
 
 type Opt = [string, string];
@@ -58,54 +59,117 @@ export function QueueActions({ order, centers, team }: { order: QueueOrder; cent
 
 // ------------------------------------------------------------------ Quadro de OPs
 export type OpCard = { id: string; number: number; item: string; qty: number; produced: number; unit: string; client: string | null; order: number | null; center: string | null; resp: string | null;
-  priority: string; needDate: string | null; stageId: string; progress: number; live: boolean };
+  priority: string; needDate: string | null; stageId: string; progress: number; live: boolean; work: string | null; custom: Record<string, string> };
 export type StageCol = { id: string; name: string; color: string; kind: string };
+export type BoardField = { id: string; label: string; onCard: boolean };
 
-export function OpBoard({ stages, ops, canEdit }: { stages: StageCol[]; ops: OpCard[]; canEdit: boolean }) {
-  const router = useRouter();
-  const [drag, setDrag] = useState<string | null>(null);
-  const [over, setOver] = useState<string | null>(null);
-  const { run } = useRun();
-  const hoje = today();
+/** Informações que podem aparecer no cartão (escolhidas em “Exibir”); os campos da OP entram no fim. */
+const BASE_FIELDS: { id: string; label: string }[] = [
+  { id: "prioridade", label: "Prioridade" }, { id: "necessidade", label: "Data de necessidade" }, { id: "cliente", label: "Cliente e pedido" }, { id: "obra", label: "Obra" },
+  { id: "produzido", label: "Quantidade produzida" }, { id: "centro", label: "Centro de trabalho" }, { id: "responsavel", label: "Responsável" }, { id: "progresso", label: "Progresso" }, { id: "execucao", label: "Em execução agora" },
+];
+const TAG_COLORS = ["#1E3A5F", "#7A4FA0", "#1F8A8A", "#C2185B", "#2E7D4F", "#8A6D1F", "#2F6E9A", "#C77700", "#B3261E", "#4A5260"];
+const tagColor = (v: string) => TAG_COLORS[[...v].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7) % TAG_COLORS.length];
+
+/** Guarda no navegador o que mostrar no cartão (cada pessoa escolhe o seu). */
+function useCardFields(key: string, fields: BoardField[]) {
+  const def = useMemo(() => [...BASE_FIELDS.map((f) => f.id), ...fields.filter((f) => f.onCard).map((f) => f.id)], [fields]);
+  const [on, setOn] = useState<string[]>(def);
+  useEffect(() => {
+    try { const v = JSON.parse(localStorage.getItem(`cards.${key}`) ?? "null"); if (Array.isArray(v)) setOn(v.filter((x) => typeof x === "string")); } catch { /* sem armazenamento */ }
+  }, [key]);
+  const save = (v: string[]) => { setOn(v); try { localStorage.setItem(`cards.${key}`, JSON.stringify(v)); } catch { /* sem armazenamento */ } };
+  const reset = () => { setOn(def); try { localStorage.removeItem(`cards.${key}`); } catch { /* sem armazenamento */ } };
+  return { on: new Set(on), save, reset };
+}
+
+export function CardFieldsMenu({ fields, on, save, reset }: { fields: BoardField[]; on: Set<string>; save: (v: string[]) => void; reset: () => void }) {
+  const [open, setOpen] = useState(false);
+  const all = [...BASE_FIELDS, ...fields.map((f) => ({ id: f.id, label: f.label }))];
+  const toggle = (id: string) => save(on.has(id) ? [...on].filter((x) => x !== id) : [...on, id]);
   return (
-    <div className="kanban">
-      {stages.map((st) => {
-        let list = ops.filter((o) => o.stageId === st.id);
-        list = st.kind === "finalizada" ? list : list.sort((a, b) => (a.needDate ?? "9").localeCompare(b.needDate ?? "9"));
-        return (
-          <section key={st.id} className={`col${over === st.id ? " over" : ""}`} style={{ ["--c" as string]: st.color }} aria-label={st.name}
-            onDragOver={(e) => { if (!canEdit) return; e.preventDefault(); setOver(st.id); }} onDragLeave={() => setOver(null)}
-            onDrop={(e) => { e.preventDefault(); setOver(null); const o = ops.find((x) => x.id === drag); setDrag(null); if (o && o.stageId !== st.id) run(() => moveOpAction(o.id, st.id)); }}>
-            <div className="col-h"><span className="dot" style={{ background: st.color }} />{st.name}<span className="n">{list.length}</span></div>
-            <div className="col-b">
-              {list.map((o) => {
-                const late = o.needDate && o.needDate < hoje && st.kind !== "finalizada" && st.kind !== "cancelada";
-                return (
-                  <article key={o.id} className="card" draggable={canEdit} tabIndex={0} style={{ ["--p" as string]: PRIORITIES[o.priority] ?? "transparent", ["--c" as string]: st.color }}
-                    onDragStart={() => setDrag(o.id)} onDragEnd={() => setDrag(null)} onClick={() => router.push(`/ops/${o.id}`)} onKeyDown={(e) => { if (e.key === "Enter") router.push(`/ops/${o.id}`); }} aria-label={`OP ${o.number}`}>
-                    <div className="card-top"><b>OP {o.number}</b>{o.priority !== "Normal" && <span>{o.priority}</span>}<span className={`late badge${late ? " bad" : ""}`}>{late && <Icon name="alert" size={12} />}{fmtD(o.needDate)}</span></div>
-                    <h3>{o.item}</h3>
-                    <div className="meta">
-                      {o.client && <span>{o.client}{o.order ? ` · PV ${o.order}` : ""}</span>}
-                      <span>{qf(o.produced)} de {qf(o.qty)} {o.unit} produzidas{o.center ? ` · ${o.center}` : ""}</span>
-                      {o.live && <span className="live"><span className="live-dot" />Em execução</span>}
-                    </div>
-                    <div className="foot">{o.resp && <span className="avatar sm" title={o.resp}>{ini(o.resp)}</span>}<div className="prog" aria-label={`Progresso ${o.progress}%`}><i style={{ width: `${Math.min(100, o.progress)}%` }} /></div><span className="prog-t">{o.progress}%</span></div>
-                  </article>
-                );
-              })}
-              {!list.length && <div className="col-empty">{canEdit ? "Arraste uma OP para cá" : "Vazio"}</div>}
-            </div>
-          </section>
-        );
-      })}
+    <div className="cf-menu">
+      <button type="button" className="btn btn-sm" aria-expanded={open} onClick={() => setOpen(!open)}><Icon name="eye" size={14} /> Exibir no cartão</button>
+      {open && (
+        <>
+          <div className="cf-scrim" onClick={() => setOpen(false)} />
+          <div className="cf-pop" role="dialog" aria-label="Informações do cartão">
+            <b>O que mostrar no cartão</b>
+            {all.map((f, i) => (
+              <label key={f.id} className="chk" style={i === BASE_FIELDS.length ? { borderTop: "1px solid var(--line-2)", paddingTop: 8, marginTop: 4 } : undefined}>
+                <input type="checkbox" checked={on.has(f.id)} onChange={() => toggle(f.id)} /> {f.label}</label>
+            ))}
+            {!fields.length && <small className="muted">Campos como Tipo e Pintura: cadastre em Produção › Configurações › Campos da OP.</small>}
+            <button type="button" className="btn btn-ghost btn-sm" onClick={reset}>Voltar ao padrão</button>
+          </div>
+        </>
+      )}
     </div>
   );
 }
 
+export function OpBoard({ stages, ops, canEdit, fields = [], storageKey = "ops", tv = false, toolbar }: {
+  stages: StageCol[]; ops: OpCard[]; canEdit: boolean; fields?: BoardField[]; storageKey?: string; tv?: boolean; toolbar?: ReactNode;
+}) {
+  const router = useRouter();
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const { run } = useRun();
+  const cf = useCardFields(storageKey, fields);
+  const show = (k: string) => cf.on.has(k);
+  const hoje = today();
+  const edit = canEdit && !tv;
+  return (
+    <>
+      <div className="board-bar">{toolbar}<span style={{ marginLeft: "auto" }} /><CardFieldsMenu fields={fields} {...cf} /></div>
+      <div className={`kanban${tv ? " tv-kanban" : ""}`}>
+        {stages.map((st) => {
+          let list = ops.filter((o) => o.stageId === st.id);
+          list = st.kind === "finalizada" ? list : list.sort((a, b) => (a.needDate ?? "9").localeCompare(b.needDate ?? "9"));
+          return (
+            <section key={st.id} className={`col${over === st.id ? " over" : ""}`} style={{ ["--c" as string]: st.color }} aria-label={st.name}
+              onDragOver={(e) => { if (!edit) return; e.preventDefault(); setOver(st.id); }} onDragLeave={() => setOver(null)}
+              onDrop={(e) => { e.preventDefault(); setOver(null); const o = ops.find((x) => x.id === drag); setDrag(null); if (o && o.stageId !== st.id) run(() => moveOpAction(o.id, st.id)); }}>
+              <div className="col-h"><span className="dot" style={{ background: st.color }} />{st.name}<span className="n">{list.length}</span></div>
+              <div className="col-b">
+                {list.map((o) => {
+                  const late = o.needDate && o.needDate < hoje && st.kind !== "finalizada" && st.kind !== "cancelada";
+                  const tags = fields.filter((f) => show(f.id) && o.custom[f.id]);
+                  return (
+                    <article key={o.id} className="card" draggable={edit} tabIndex={0} style={{ ["--p" as string]: show("prioridade") ? PRIORITIES[o.priority] ?? "transparent" : "transparent", ["--c" as string]: st.color }}
+                      onDragStart={() => setDrag(o.id)} onDragEnd={() => setDrag(null)} onClick={() => { if (!tv) router.push(`/ops/${o.id}`); }}
+                      onKeyDown={(e) => { if (e.key === "Enter" && !tv) router.push(`/ops/${o.id}`); }} aria-label={`OP ${o.number}`}>
+                      <div className="card-top"><b>OP {o.number}</b>{show("prioridade") && o.priority !== "Normal" && <span>{o.priority}</span>}
+                        {show("necessidade") && <span className={`late badge${late ? " bad" : ""}`}>{late && <Icon name="alert" size={12} />}{fmtD(o.needDate)}</span>}</div>
+                      <h3>{o.item}</h3>
+                      <div className="meta">
+                        {show("cliente") && o.client && <span>{o.client}{o.order ? ` · PV ${o.order}` : ""}</span>}
+                        {show("obra") && o.work && <span><Icon name="pin" size={12} /> {o.work}</span>}
+                        {show("produzido") && <span>{qf(o.produced)} de {qf(o.qty)} {o.unit} produzidas</span>}
+                        {show("centro") && o.center && <span>{o.center}</span>}
+                        {show("execucao") && o.live && <span className="live"><span className="live-dot" />Em execução</span>}
+                      </div>
+                      {tags.length > 0 && <div className="po-tags">{tags.map((t) => <span key={t.id} className="po-tag" title={t.label} style={{ ["--t" as string]: tagColor(o.custom[t.id]) }}>{o.custom[t.id]}</span>)}</div>}
+                      {(show("responsavel") || show("progresso")) && (
+                        <div className="foot">{show("responsavel") && o.resp && <span className="avatar sm" title={o.resp}>{ini(o.resp)}</span>}
+                          {show("progresso") && <><div className="prog" aria-label={`Progresso ${o.progress}%`}><i style={{ width: `${Math.min(100, o.progress)}%` }} /></div><span className="prog-t">{o.progress}%</span></>}</div>
+                      )}
+                    </article>
+                  );
+                })}
+                {!list.length && <div className="col-empty">{edit ? "Arraste uma OP para cá" : "Vazio"}</div>}
+              </div>
+            </section>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 // ------------------------------------------------------------------ Cabeçalho da OP (dados principais)
-export type OpForm = { id?: string; itemId: string; itemLabel: string; qty: number; salesOrderId: string; partnerId: string; partnerLabel?: string; workCenterId: string; responsibleId: string; priority: string; startDate: string; needDate: string; notes: string; stageId?: string };
-export function OpHeader({ op, orders, clients, centers, team, stages, canEdit }: { op: OpForm; orders: Opt[]; clients: Opt[]; centers: Opt[]; team: Opt[]; stages?: Opt[]; canEdit: boolean }) {
+export type OpForm = { id?: string; itemId: string; itemLabel: string; qty: number; salesOrderId: string; partnerId: string; partnerLabel?: string; workCenterId: string; responsibleId: string; priority: string; startDate: string; needDate: string; notes: string; stageId?: string; work?: string; custom?: Record<string, string> };
+export function OpHeader({ op, orders, clients, centers, team, stages, canEdit, fields = [] }: { op: OpForm; orders: Opt[]; clients: Opt[]; centers: Opt[]; team: Opt[]; stages?: Opt[]; canEdit: boolean; fields?: CField[] }) {
   const [d, setD] = useState(op);
   const [pick, setPick] = useState(false);
   const [dirty, setDirty] = useState(!op.id);
@@ -132,12 +196,14 @@ export function OpHeader({ op, orders, clients, centers, team, stages, canEdit }
         <div className="fld"><label htmlFor="op_r">Responsável</label><Sel id="op_r" value={d.responsibleId} disabled={ro} onChange={(e) => set({ responsibleId: e.target.value })}><option value="">Nenhum</option>{team.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Sel></div>
         <div className="fld"><label htmlFor="op_i">Início previsto</label><input id="op_i" type="date" value={d.startDate} disabled={ro} onChange={(e) => set({ startDate: e.target.value })} /></div>
         <div className="fld"><label htmlFor="op_n">Data de necessidade</label><input id="op_n" type="date" value={d.needDate} disabled={ro} onChange={(e) => set({ needDate: e.target.value })} /></div>
+        <PlaceField id="op_w" className="fld span2" label="Obra / local" value={d.work ?? ""} disabled={ro} partnerId={d.partnerId} onChange={(v) => set({ work: v })} placeholder="Para o quadro e o acompanhamento de obras" />
+        <CustomFieldsForm fields={fields} prefix="opcf" value={d.custom ?? {}} disabled={ro} onChange={(v) => set({ custom: v })} />
         <div className="fld full"><label htmlFor="op_obs">Observações</label><textarea id="op_obs" rows={2} value={d.notes} disabled={ro} onChange={(e) => set({ notes: e.target.value })} /></div>
       </div>
       {canEdit && <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
         <button type="button" className="btn btn-primary" disabled={!dirty || pending || !d.itemId || !(d.qty > 0)} onClick={() => run(() => saveOpAction({
           id: d.id, itemId: d.itemId, qty: d.qty, salesOrderId: d.salesOrderId || null, partnerId: d.partnerId || null, workCenterId: d.workCenterId || null, responsibleId: d.responsibleId || null,
-          priority: d.priority as "Normal", startDate: d.startDate || null, needDate: d.needDate || null, notes: d.notes, stageId: d.stageId || null }), () => setDirty(false))}>{pending ? "Salvando…" : d.id ? "Salvar dados da OP" : "Criar OP"}</button>
+          priority: d.priority as "Normal", startDate: d.startDate || null, needDate: d.needDate || null, notes: d.notes, stageId: d.stageId || null, work: d.work ?? null, custom: d.custom ?? {} }), () => setDirty(false))}>{pending ? "Salvando…" : d.id ? "Salvar dados da OP" : "Criar OP"}</button>
       </div>}
       {pick && <ItemPicker single title="Produto a produzir" priceLabel="Custo médio" priceOf={(r) => r.cost} onClose={() => setPick(false)}
         onPick={([r]) => { set({ itemId: r.id, itemLabel: `${r.name} · ${r.code}` }); setPick(false); }} />}
@@ -290,5 +356,25 @@ export function StageSelect({ opId, stageId, stages }: { opId: string; stageId: 
     <select className="et-sel" style={{ ["--c" as string]: st?.color ?? "#6B7785" }} value={stageId} disabled={pending} aria-label="Etapa da OP" onChange={(e) => run(() => moveOpAction(opId, e.target.value))}>
       {stages.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
     </select>
+  );
+}
+
+// ------------------------------------------------------------------ importar OPs de planilha
+export function ImportOpsButton({ fields }: { fields: string[] }) {
+  const [open, setOpen] = useState(false);
+  const cols = ["Item", "Quantidade", "Necessidade", "Prioridade", "Pedido", "Obra", "Observação", ...fields];
+  const template = () => {
+    const ex = ["(código do item)", "10", "31/12/2026", "Normal", "", "Residencial Atlântico", "", ...fields.map(() => "")];
+    const csv = "﻿" + [cols, ex].map((r) => r.map((c) => `"${c.replace(/"/g, '""')}"`).join(";")).join("\r\n");
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); a.download = "modelo-ops.csv"; a.click();
+  };
+  return (
+    <>
+      <button type="button" className="btn" onClick={() => setOpen(true)}><Icon name="upload" size={16} /> Importar planilha</button>
+      {open && <ImportSheet title="Importar ordens de produção" onClose={() => setOpen(false)} template={template}
+        intro="Cada linha da planilha vira uma OP com a estrutura do produto. A primeira linha deve ter os nomes das colunas; a ordem não importa."
+        cols={["Item (código) *", "Quantidade *", "Necessidade", "Prioridade (Baixa, Normal, Alta, Urgente)", "Pedido (nº do pedido de venda)", "Obra", "Observação", ...fields]}
+        onRows={(rows) => importOpsAction({ rows })} />}
+    </>
   );
 }
