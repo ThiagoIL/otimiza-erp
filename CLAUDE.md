@@ -46,7 +46,9 @@ Financeiro: contas a pagar/receber, fluxo de caixa, extrato por conta, relatóri
 
 ## Comandos
 `npm run typecheck` · `npm run build` · `npm test` · `npm run db:generate` · `npm run db:migrate` ·
-`DEMO_ADMIN_PASSWORD=… npm run db:seed-demo` (empresa "demo" com dados de exemplo em todos os módulos)
+`DEMO_ADMIN_PASSWORD=… npm run db:seed-demo` (empresa "demo" com dados de exemplo em todos os módulos) ·
+`DEMO_RESET=1 DEMO_ADMIN_PASSWORD=… npm run db:seed-esquadrias` (empresa "demo2" de **esquadrias de alumínio**; com
+`DEMO_RESET=1` apaga os dados de negócio da empresa e popula de novo, mantendo os administradores)
 
 ## Testar sem Docker (Windows)
 PostgreSQL em memória com PGlite, numa pasta fora do projeto:

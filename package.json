@@ -13,6 +13,7 @@
     "db:migrate": "node scripts/migrate.mjs",
     "db:bootstrap": "node scripts/bootstrap.mjs",
     "db:seed-demo": "node scripts/seed-demo.mjs",
+    "db:seed-esquadrias": "node scripts/seed-esquadrias.mjs",
     "db:studio": "drizzle-kit studio"
   },
   "engines": { "node": ">=20.18" },

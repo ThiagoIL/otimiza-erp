@@ -31,8 +31,9 @@ export async function MeasurementsList({ searchParams }: { searchParams: Promise
     ops: sql<number>`(select count(*)::int from production_orders o where o.measurement_id = "measurements"."id")`,
   }).from(E.measurements).leftJoin(E.partners, eq(E.partners.id, E.measurements.partnerId)).leftJoin(E.teamMembers, eq(E.teamMembers.id, E.measurements.measurerId))
     .orderBy(desc(E.measurements.number)));
-  let rows = d.map((r) => ({ ...r, st: r.m.status === "LIBERADA" && r.ops > 0 ? "PRODUCAO" : r.m.status }));
-  const cnt = (k: string) => rows.filter((r) => r.st === k).length;
+  const all = d.map((r) => ({ ...r, st: r.m.status === "LIBERADA" && r.ops > 0 ? "PRODUCAO" : r.m.status }));
+  const cnt = (k: string) => all.filter((r) => r.st === k).length;
+  let rows = all;
   const st = sp.st ?? "MEDINDO";
   if (st !== "todas") rows = rows.filter((r) => r.st === st);
   if (sp.q) { const q = norm(sp.q); rows = rows.filter((r) => norm(`${r.m.number} ${r.m.work} ${r.m.address ?? ""} ${r.cli ?? ""}`).includes(q)); }
